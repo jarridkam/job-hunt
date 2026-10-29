@@ -388,7 +388,8 @@ def today(request: Request):
     app_counts = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) n FROM applications GROUP BY status")}
     applied_n = sum(app_counts.get(s, 0) for s in ("submitted", "screening", "assessment", "interview", "offer"))
     queue_n = sum(app_counts.get(s, 0) for s in ("queued", "drafting", "ready", "review", "needs_attention"))
-    return render(request, "today.html", ready=ready, due=due_items(), needs=needs, needs_total=len(items), top=top, stamps=health.stamps(),
+    setup_n, setup_min = setup_left()
+    return render(request, "today.html", ready=ready, setup_n=setup_n, setup_min=setup_min, due=due_items(), needs=needs, needs_total=len(items), top=top, stamps=health.stamps(),
                   match_count=match_count, applied_n=applied_n, queue_n=queue_n, running=tasks.running(),
                   last_run=db.q1("SELECT * FROM runs ORDER BY id DESC LIMIT 1"))
 
@@ -399,16 +400,35 @@ def setup_state() -> dict:
     return {"name": bool(config.get("cand_first_name") and config.get("cand_email")),
             "key": bool(config.get("anthropic_api_key")), "resume": bool(documents.active_resume()),
             "titles": bool(config.get_lines("search_titles")),
-            "email": bool(config.get("email_user") and config.get("email_pass"))}
+            "email": bool(config.get("email_user") and config.get("email_pass")),
+            "first": bool(db.q1("SELECT 1 FROM applications LIMIT 1") or db.q1("SELECT 1 FROM jobs WHERE source='capture' LIMIT 1"))}
+
+
+# Order = value first: the AI and the inbox catch tests on day one, one tracked job shows it working,
+# and the full profile (only needed for auto-apply forms) comes last.
+SETUP_STEPS = [
+    {"key": "ai", "state": "key", "title": "AI key", "minutes": 3, "why": "nothing gets read, scored or written without it",
+     "needs": "An Anthropic API key", "needs_link": "https://platform.claude.com/settings/keys", "needs_link_text": "make one",
+     "needs_note": "Needs a card on file with Anthropic. A typical day costs well under a dollar."},
+    {"key": "inbox", "state": "email", "title": "Inbox", "minutes": 3, "why": "catches tests and interviews so you don't miss them",
+     "needs": "A Gmail app password", "needs_link": "https://myaccount.google.com/apppasswords", "needs_link_text": "make one",
+     "needs_note": "Gmail only allows it with 2-step verification on. Other providers: your IMAP login."},
+    {"key": "first", "state": "first", "title": "One tracked job", "minutes": 1, "why": "shows it working on something real",
+     "needs": "One job link or recruiter message", "needs_link": "", "needs_link_text": "",
+     "needs_note": "Something you applied to or want to. Copy the link now."},
+    {"key": "resume", "state": "resume", "title": "Resume", "minutes": 1, "why": "fit scores and letters come from it",
+     "needs": "Your resume (PDF or Word)", "needs_link": "", "needs_link_text": "", "needs_note": "Or paste the text."},
+    {"key": "titles", "state": "titles", "title": "Target job titles", "minutes": 1, "why": "tells the search what to look for",
+     "needs": "", "needs_link": "", "needs_link_text": "", "needs_note": ""},
+    {"key": "you", "state": "name", "title": "Your name and contact", "minutes": 1, "why": "application forms need it",
+     "needs": "", "needs_link": "", "needs_link_text": "", "needs_note": ""},
+]
+SETUP_INDEX = {s["key"]: i + 1 for i, s in enumerate(SETUP_STEPS)}
 
 
 def setup_steps() -> list[dict]:
     st = setup_state()
-    return [{"title": "Your name and contact", "done": st["name"], "why": "forms need it"},
-            {"title": "AI key", "done": st["key"], "why": "nothing gets scored or written without it"},
-            {"title": "Resume", "done": st["resume"], "why": "fit scores and letters come from it"},
-            {"title": "Target job titles", "done": st["titles"], "why": "tells the search what to look for"},
-            {"title": "Inbox", "done": st["email"], "why": "catches tests and interviews so you don't miss them"}]
+    return [dict(s, done=st[s["state"]]) for s in SETUP_STEPS]
 
 
 def setup_needed() -> bool:
@@ -417,56 +437,98 @@ def setup_needed() -> bool:
     return not (st["key"] or st["resume"] or st["titles"]) and not config.get("setup_dismissed")
 
 
+def setup_left() -> tuple[int, int]:
+    """(steps left, minutes left)."""
+    left = [s for s in setup_steps() if not s["done"]]
+    return len(left), sum(s["minutes"] for s in left)
+
+
+def _next_step(key: str) -> str:
+    return f"/setup?step={SETUP_INDEX[key] + 1}"
+
+
 @app.get("/setup", response_class=HTMLResponse)
 def setup_page(request: Request, step: int = 0):
     steps = setup_steps()
+    intro = False
     if not step:
-        step = next((i + 1 for i, s in enumerate(steps) if not s["done"]), len(steps) + 1)
+        if not any(s["done"] for s in steps):
+            intro = True       # first visit: say what you need and how long, before asking for anything
+            step = 1
+        else:
+            step = next((i + 1 for i, s in enumerate(steps) if not s["done"]), len(steps) + 1)
     step = max(1, min(step, len(steps) + 1))
+    cur = steps[step - 1] if step <= len(steps) else None
     v = {k: config.get(k) for k in ("cand_first_name", "cand_last_name", "cand_email", "cand_phone", "cand_location",
                                     "search_titles", "search_locations", "email_user", "email_host")}
+    first = db.q1("SELECT company, title, NULL AS fit_score, 'application' AS kind, id FROM applications ORDER BY id DESC LIMIT 1")
+    cap = db.q1("SELECT company, title, fit_score, 'job' AS kind, id FROM jobs WHERE source='capture' ORDER BY id DESC LIMIT 1")
     v.update({"key_set": bool(config.get("anthropic_api_key")), "resume": documents.active_resume(),
-              "email_set": bool(config.get("email_pass")), "remote_only": config.get_bool("remote_only")})
-    return render(request, "setup.html", step=step, steps=steps, v=v, all_done=all(s["done"] for s in steps),
-                  dismissed=bool(config.get("setup_dismissed")))
+              "email_set": bool(config.get("email_pass")), "remote_only": config.get_bool("remote_only"),
+              "since_days": config.get_int("email_since_days", 60), "first": cap or first})
+    _n, left_min = setup_left()
+    return render(request, "setup.html", step=step, steps=steps, cur=cur, v=v, intro=intro, state=setup_state(),
+                  all_done=all(s["done"] for s in steps), dismissed=bool(config.get("setup_dismissed")),
+                  total_min=sum(s["minutes"] for s in steps), left_min=left_min, inbox_running=bool(tasks.is_running("email")))
 
 
-@app.post("/setup/1")
-def setup_1(cand_first_name: str = Form(""), cand_last_name: str = Form(""), cand_email: str = Form(""),
-            cand_phone: str = Form(""), cand_location: str = Form("")):
-    for k, val in (("cand_first_name", cand_first_name), ("cand_last_name", cand_last_name), ("cand_email", cand_email),
-                   ("cand_phone", cand_phone), ("cand_location", cand_location)):
-        db.set_setting(k, val.strip())
-    return back("/setup?step=2")
-
-
-@app.post("/setup/2")
-def setup_2(anthropic_api_key: str = Form(""), action: str = Form("")):
+@app.post("/setup/ai")
+def setup_ai(anthropic_api_key: str = Form(""), action: str = Form("")):
     if anthropic_api_key.strip():
         db.set_setting("anthropic_api_key", anthropic_api_key.strip())
     if action == "test" or anthropic_api_key.strip():
         ok, msg = llm.check_key()
-        if not ok:
-            return back("/setup?step=2", msg)
-        if action == "test":
-            return back("/setup?step=2", msg)
-    return back("/setup?step=3")
+        if not ok or action == "test":
+            return back("/setup?step=1", msg)
+    return back(_next_step("ai"))
 
 
-@app.post("/setup/3")
-async def setup_3(file: UploadFile | None = File(None), content: str = Form("")):
+@app.post("/setup/inbox")
+def setup_inbox(email_user: str = Form(""), email_pass: str = Form(""), email_host: str = Form(""), action: str = Form("")):
+    db.set_setting("email_user", email_user.strip())
+    if email_host.strip():
+        db.set_setting("email_host", email_host.strip())
+    if email_pass.strip():
+        db.set_setting("email_pass", email_pass.strip())
+    here = f"/setup?step={SETUP_INDEX['inbox']}"
+    if action == "test" or (email_user.strip() and email_pass.strip()):
+        ok, msg = email_tracker.test_connection()
+        if not ok or action == "test":
+            return back(here, msg)
+        # Value right away: start reading while they do the rest of setup.
+        if config.get("anthropic_api_key") and not tasks.is_running("email"):
+            tasks.start("email", tasks.email_task)
+            return back(_next_step("inbox"), "Connected. Reading your inbox in the background; tests and interviews will be on Today.")
+    return back(_next_step("inbox"))
+
+
+@app.post("/setup/first")
+def setup_first(url: str = Form(""), text: str = Form("")):
+    here = f"/setup?step={SETUP_INDEX['first']}"
+    if not (url.strip() or text.strip()):
+        return back(here, "Paste a link or a message first, or skip this step.")
+    try:
+        res = capture.capture(text=text, url=url)
+    except Exception as e:  # noqa: BLE001
+        return back(here, "Couldn't read that. " + messages.friendly_error(e))
+    return back(here, res["message"])
+
+
+@app.post("/setup/resume")
+async def setup_resume(file: UploadFile | None = File(None), content: str = Form("")):
     try:
         if file is not None and file.filename:
             documents.save_upload("resume", "", file.filename, await file.read())
         elif content.strip():
             documents.add_document("resume", f"Resume {datetime.now():%Y-%m-%d}", content.strip())
     except Exception as e:  # noqa: BLE001
-        return back("/setup?step=3", "Couldn't read that file. " + messages.friendly_error(e))
-    return back("/setup?step=4")
+        return back(f"/setup?step={SETUP_INDEX['resume']}", "Couldn't read that file. " + messages.friendly_error(e))
+    return back(_next_step("resume"))
 
 
-@app.post("/setup/4")
-def setup_4(search_titles: str = Form(""), search_locations: str = Form(""), remote_only: str = Form(""), action: str = Form("")):
+@app.post("/setup/titles")
+def setup_titles(search_titles: str = Form(""), search_locations: str = Form(""), remote_only: str = Form(""), action: str = Form("")):
+    here = f"/setup?step={SETUP_INDEX['titles']}"
     db.set_setting("search_titles", search_titles.strip())
     db.set_setting("search_locations", search_locations.strip())
     db.set_setting("remote_only", "1" if remote_only else "0")
@@ -474,26 +536,21 @@ def setup_4(search_titles: str = Form(""), search_locations: str = Form(""), rem
         try:
             p = matcher.suggest_search_profile()
         except Exception as e:  # noqa: BLE001
-            return back("/setup?step=4", "Couldn't suggest titles. " + messages.friendly_error(e))
+            return back(here, "Couldn't suggest titles. " + messages.friendly_error(e))
         db.set_setting("search_titles", "\n".join(p.titles))
         if not config.get("search_keywords").strip():
             db.set_setting("search_keywords", "\n".join(p.keywords))
-        return back("/setup?step=4", f"Suggested {len(p.titles)} titles from your resume. Edit them, then continue.")
-    return back("/setup?step=5")
+        return back(here, f"Suggested {len(p.titles)} titles from your resume. Edit them, then continue.")
+    return back(_next_step("titles"))
 
 
-@app.post("/setup/5")
-def setup_5(email_user: str = Form(""), email_pass: str = Form(""), email_host: str = Form(""), action: str = Form("")):
-    db.set_setting("email_user", email_user.strip())
-    if email_host.strip():
-        db.set_setting("email_host", email_host.strip())
-    if email_pass.strip():
-        db.set_setting("email_pass", email_pass.strip())
-    if action == "test" or (email_user.strip() and email_pass.strip()):
-        ok, msg = email_tracker.test_connection()
-        if not ok or action == "test":
-            return back("/setup?step=5", msg)
-    return back("/setup?step=6")
+@app.post("/setup/you")
+def setup_you(cand_first_name: str = Form(""), cand_last_name: str = Form(""), cand_email: str = Form(""),
+              cand_phone: str = Form(""), cand_location: str = Form("")):
+    for k, val in (("cand_first_name", cand_first_name), ("cand_last_name", cand_last_name), ("cand_email", cand_email),
+                   ("cand_phone", cand_phone), ("cand_location", cand_location)):
+        db.set_setting(k, val.strip())
+    return back(_next_step("you"))
 
 
 @app.post("/setup/dismiss")

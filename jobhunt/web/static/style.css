@@ -348,3 +348,8 @@ button.link { background: none; border: 0; color: var(--muted); padding: 2px 4px
 .note-prev:hover { text-decoration: underline; }
 .note-prev.empty { color: var(--muted); opacity: .7; }
 .labels-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+
+/* setup prereqs */
+.prereqs li { margin: 10px 0; }
+.pre-min { display: inline-block; min-width: 54px; color: var(--muted); font-size: 12px; }
+.setup-meta { margin: 6px 0 2px; }

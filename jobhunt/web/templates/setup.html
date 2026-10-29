@@ -2,83 +2,130 @@
 {% block title %}Set up – jobhunt{% endblock %}
 {% block body %}
 <div class="setup">
+  {% if intro %}
+  <h1>Let's set you up</h1>
+  <p class="muted">About <b>{{ total_min }} minutes</b> in {{ steps|length }} short steps. Every step saves as you go, so you can stop at any point and pick up where you left off.</p>
+  <div class="card">
+    <b>Have these handy</b> <span class="small muted">· open them in another tab now, it saves hunting later</span>
+    <ul class="clean prereqs">
+      {% for s in steps if s.needs %}<li><span class="pre-min">~{{ s.minutes }} min</span> <b>{{ s.needs }}</b>{% if s.needs_link %} · <a href="{{ s.needs_link }}" target="_blank" rel="noopener">{{ s.needs_link_text }}</a>{% endif %}<div class="small muted">{{ s.needs_note }}</div></li>{% endfor %}
+    </ul>
+    <div class="small muted">Missing one? Skip that step. Nothing else depends on finishing in one go.</div>
+    <div class="setup-foot"><a class="btn primary" href="/setup?step=1">Start</a><a class="btn" href="/">Look around first</a></div>
+  </div>
+
+  {% else %}
   <div class="setup-progress">
     {% for s in steps %}<a href="/setup?step={{ loop.index }}" class="dot {{ 'done' if s.done }} {{ 'on' if loop.index == step }}" title="{{ s.title }}">{{ loop.index }}</a>{% if not loop.last %}<span class="bar {{ 'done' if s.done }}"></span>{% endif %}{% endfor %}
   </div>
-  <div class="small muted" style="margin:6px 0 2px">Step {{ step }} of {{ steps|length }}{% if step <= steps|length and steps[step-1].done %} · <span class="ok-text">done</span>{% endif %}</div>
+  {% if cur %}
+  <div class="small muted setup-meta">Step {{ step }} of {{ steps|length }} · about {{ cur.minutes }} min{% if left_min %} · ~{{ left_min }} min left in total{% endif %}{% if cur.done %} · <span class="ok-text">done</span>{% endif %}</div>
+  {% endif %}
 
-  {% if step == 1 %}
-  <h1>Who's applying?</h1>
-  <p class="muted">Goes on every form so you never type it again.</p>
-  <form method="post" action="/setup/1" class="card">
-    <div class="pair"><div><label>First name</label><input type="text" name="cand_first_name" value="{{ v.cand_first_name }}" required></div>
-      <div><label>Last name</label><input type="text" name="cand_last_name" value="{{ v.cand_last_name }}" required></div></div>
-    <label>Email</label><input type="text" name="cand_email" value="{{ v.cand_email }}" required inputmode="email">
-    <div class="pair"><div><label>Phone</label><input type="text" name="cand_phone" value="{{ v.cand_phone }}" inputmode="tel"></div>
-      <div><label>City, State</label><input type="text" name="cand_location" value="{{ v.cand_location }}"></div></div>
-    <div class="setup-foot"><button class="primary">Continue</button><a class="btn" href="/setup?step=2">Skip for now</a></div>
-  </form>
-
-  {% elif step == 2 %}
+  {% if cur and cur.key == 'ai' %}
   <h1>Connect the AI</h1>
-  <p class="muted">Scores jobs, writes letters and reads your inbox. You pay Anthropic directly; a typical day is well under a dollar.</p>
-  <form method="post" action="/setup/2" class="card">
+  <p class="muted">Reads your inbox, scores jobs and writes letters. You pay Anthropic directly; a typical day is well under a dollar.</p>
+  <form method="post" action="/setup/ai" class="card">
     <label>Anthropic API key</label><input type="password" name="anthropic_api_key" placeholder="{{ 'saved — leave blank to keep it' if v.key_set else 'sk-ant-…' }}" autocomplete="off">
-    <div class="small muted" style="margin-top:4px">Get one at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com → API keys</a>. Stored encrypted on this machine only.</div>
+    <div class="small muted" style="margin-top:4px">Make one at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com → API keys</a> (needs a card on file). Stored encrypted on this machine only.</div>
     <div class="setup-foot"><button class="primary">{{ 'Continue' if not v.key_set else 'Save & continue' }}</button>
       {% if v.key_set %}<button name="action" value="test" class="small">Test the key</button>{% endif %}
-      <a class="btn" href="/setup?step=3">Skip for now</a></div>
+      <a class="btn" href="/setup?step={{ step + 1 }}">Skip for now</a></div>
   </form>
 
-  {% elif step == 3 %}
-  <h1>Your resume</h1>
-  <p class="muted">Used to judge fit, write letters and fill forms. PDF or Word is fine.</p>
-  {% if v.resume %}<div class="card" style="margin-bottom:10px">{{ as_pill('completed') }} <b>{{ v.resume.title }}</b> <span class="small muted">is your active resume. Upload another to replace it.</span></div>{% endif %}
-  <form method="post" action="/setup/3" class="card" enctype="multipart/form-data">
-    <label>Upload</label><input type="file" name="file" accept=".pdf,.docx,.doc,.txt,.md">
-    <div class="small muted" style="margin:8px 0 2px">or paste the text</div>
-    <textarea name="content" placeholder="Paste your resume text here if you don't have a file" style="min-height:120px"></textarea>
-    <div class="setup-foot"><button class="primary">{{ 'Continue' if v.resume else 'Upload & continue' }}</button><a class="btn" href="/setup?step=4">Skip for now</a></div>
-  </form>
-
-  {% elif step == 4 %}
-  <h1>What jobs do you want?</h1>
-  <p class="muted">Job titles to look for. One per line. {% if v.key_set and v.resume %}Or let the AI read your resume and suggest them.{% endif %}</p>
-  <form method="post" action="/setup/4" class="card">
-    <label>Target titles</label><textarea name="search_titles" style="min-height:110px" placeholder="IT Support Specialist&#10;Help Desk Technician&#10;Junior Software Engineer">{{ v.search_titles }}</textarea>
-    {% if v.key_set and v.resume %}<button name="action" value="suggest" class="small" style="margin-top:6px">Suggest from my resume</button>{% endif %}
-    <label>Where</label><textarea name="search_locations" style="min-height:60px" placeholder="Remote&#10;Austin, TX">{{ v.search_locations }}</textarea>
-    <label class="small" style="margin-top:8px"><input type="checkbox" name="remote_only" value="1" {{ 'checked' if v.remote_only }}> Remote only</label>
-    <div class="setup-foot"><button class="primary">Continue</button><a class="btn" href="/setup?step=5">Skip for now</a></div>
-  </form>
-
-  {% elif step == 5 %}
+  {% elif cur and cur.key == 'inbox' %}
   <h1>Connect your inbox</h1>
-  <p class="muted"><b>This is the part that stops things slipping.</b> jobhunt reads only job-related mail and turns tests, interviews and recruiter calls into deadlines on Today.</p>
-  <form method="post" action="/setup/5" class="card">
+  <p class="muted"><b>This is the part that stops things slipping.</b> jobhunt reads only job-related mail and turns tests, interviews and recruiter calls into countdowns on Today. It starts reading the last {{ v.since_days }} days the moment you continue.</p>
+  <form method="post" action="/setup/inbox" class="card">
     <label>Email address</label><input type="text" name="email_user" value="{{ v.email_user }}" inputmode="email" placeholder="you@gmail.com">
     <label>App password</label><input type="password" name="email_pass" placeholder="{{ 'saved — leave blank to keep it' if v.email_set else '16-character app password' }}" autocomplete="off">
     <div class="small muted" style="margin-top:4px">Gmail: turn on 2-step verification, then make one at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>. Your normal password will not work.</div>
     <details class="small" style="margin-top:8px"><summary>Not Gmail?</summary><label>IMAP host</label><input type="text" name="email_host" value="{{ v.email_host }}"></details>
-    <div class="setup-foot"><button class="primary">{{ 'Save & finish' if not v.email_set else 'Finish' }}</button>
+    <div class="setup-foot"><button class="primary">{{ 'Connect & continue' if not v.email_set else 'Continue' }}</button>
       {% if v.email_set %}<button name="action" value="test" class="small">Test the connection</button>{% endif %}
-      <a class="btn" href="/setup?step=6">Skip for now</a></div>
+      <a class="btn" href="/setup?step={{ step + 1 }}">Skip for now</a></div>
+  </form>
+  {% if inbox_running %}<div class="card small" style="margin-top:10px"><span class="pill run">working</span> Reading your inbox in the background. Keep going; results land on Today.</div>{% endif %}
+
+  {% elif cur and cur.key == 'first' %}
+  <h1>Track one job now</h1>
+  <p class="muted">Paste a job you applied to, or one you're eyeing. A link or the recruiter's message, either works. You'll see it tracked straight away.</p>
+  {% if v.first %}<div class="card" style="margin-bottom:10px">{{ as_pill('completed') }} <b>{{ v.first.title }}</b> <span class="muted">at {{ v.first.company }}</span>
+    {% if v.first.fit_score is not none %} · fit <b>{{ v.first.fit_score }}</b>{% endif %}
+    <div class="small muted">Tracked. {% if v.first.kind == 'application' %}It's under Pipeline.{% else %}It's under Jobs; queue it when you're ready.{% endif %}</div></div>{% endif %}
+  <form method="post" action="/setup/first" class="card">
+    <label>Job link</label><input type="url" name="url" placeholder="https://… the posting" inputmode="url">
+    <div class="small muted" style="margin:8px 0 2px">or paste a message</div>
+    <textarea name="text" placeholder="Paste an email or text from a recruiter" style="min-height:90px"></textarea>
+    <div class="setup-foot"><button class="primary" id="first-save">{{ 'Add another' if v.first else 'Track it' }}</button>
+      <a class="btn {{ 'primary' if v.first }}" href="/setup?step={{ step + 1 }}">{{ 'Continue' if v.first else 'Skip for now' }}</a>
+      <span class="small muted" id="first-wait" hidden>Reading it… about 10 seconds.</span></div>
+  </form>
+  {% if not v.key_set %}<p class="small muted">Without the AI key this only works for messages you type in; links need the AI to read the page.</p>{% endif %}
+
+  {% elif cur and cur.key == 'resume' %}
+  <h1>Your resume</h1>
+  <p class="muted">Fit scores and letters come from it. PDF or Word is fine.</p>
+  {% if v.resume %}<div class="card" style="margin-bottom:10px">{{ as_pill('completed') }} <b>{{ v.resume.title }}</b> <span class="small muted">is your active resume. Upload another to replace it.</span></div>{% endif %}
+  <form method="post" action="/setup/resume" class="card" enctype="multipart/form-data">
+    <label>Upload</label><input type="file" name="file" accept=".pdf,.docx,.doc,.txt,.md">
+    <div class="small muted" style="margin:8px 0 2px">or paste the text</div>
+    <textarea name="content" placeholder="Paste your resume text here if you don't have a file" style="min-height:120px"></textarea>
+    <div class="setup-foot"><button class="primary">{{ 'Continue' if v.resume else 'Upload & continue' }}</button><a class="btn" href="/setup?step={{ step + 1 }}">Skip for now</a></div>
+  </form>
+
+  {% elif cur and cur.key == 'titles' %}
+  <h1>What jobs do you want?</h1>
+  <p class="muted">Job titles to look for, one per line. {% if v.key_set and v.resume %}Or let the AI read your resume and suggest them.{% endif %}</p>
+  <form method="post" action="/setup/titles" class="card">
+    <label>Target titles</label><textarea name="search_titles" style="min-height:110px" placeholder="IT Support Specialist&#10;Help Desk Technician&#10;Junior Software Engineer">{{ v.search_titles }}</textarea>
+    {% if v.key_set and v.resume %}<button name="action" value="suggest" class="small" style="margin-top:6px">Suggest from my resume</button>{% endif %}
+    <label>Where</label><textarea name="search_locations" style="min-height:60px" placeholder="Remote&#10;Austin, TX">{{ v.search_locations }}</textarea>
+    <label class="small" style="margin-top:8px"><input type="checkbox" name="remote_only" value="1" {{ 'checked' if v.remote_only }}> Remote only</label>
+    <div class="setup-foot"><button class="primary">Continue</button><a class="btn" href="/setup?step={{ step + 1 }}">Skip for now</a></div>
+  </form>
+
+  {% elif cur and cur.key == 'you' %}
+  <h1>Who's applying?</h1>
+  <p class="muted">Only needed when jobhunt fills application forms for you. Typed once, never again.</p>
+  <form method="post" action="/setup/you" class="card">
+    <div class="pair"><div><label>First name</label><input type="text" name="cand_first_name" value="{{ v.cand_first_name }}" required></div>
+      <div><label>Last name</label><input type="text" name="cand_last_name" value="{{ v.cand_last_name }}" required></div></div>
+    <label>Email</label><input type="text" name="cand_email" value="{{ v.cand_email or v.email_user }}" required inputmode="email">
+    <div class="pair"><div><label>Phone</label><input type="text" name="cand_phone" value="{{ v.cand_phone }}" inputmode="tel"></div>
+      <div><label>City, State</label><input type="text" name="cand_location" value="{{ v.cand_location }}"></div></div>
+    <div class="small muted" style="margin-top:8px">Work authorization, salary and demographic answers live in Settings. jobhunt never guesses them.</div>
+    <div class="setup-foot"><button class="primary">Finish</button><a class="btn" href="/setup?step={{ step + 1 }}">Skip for now</a></div>
   </form>
 
   {% else %}
   <h1>{{ 'All set.' if all_done else 'Good enough to start.' }}</h1>
   <div class="card">
     <ul class="clean setup-check">
-    {% for s in steps %}<li>{{ as_pill('completed' if s.done else 'pending') }} <a href="/setup?step={{ loop.index }}">{{ s.title }}</a>{% if not s.done %} <span class="small muted">— {{ s.why }}</span>{% endif %}</li>{% endfor %}
+    {% for s in steps %}<li>{{ as_pill('completed' if s.done else 'pending') }} <a href="/setup?step={{ loop.index }}">{{ s.title }}</a>{% if not s.done %} <span class="small muted">— {{ s.why }} (~{{ s.minutes }} min)</span>{% endif %}</li>{% endfor %}
     </ul>
+    {% if not all_done %}<div class="small muted">The rest can wait. Today will remind you, and each one picks up where you stopped.</div>{% endif %}
     <div class="setup-foot">
-      {% if steps[1].done and steps[3].done %}<form method="post" action="/run/fetch_and_score" class="inline"><button class="primary">Find &amp; score jobs</button></form>{% endif %}
-      {% if steps[4].done and steps[1].done %}<form method="post" action="/run/email" class="inline"><button>Sync inbox</button></form>{% endif %}
-      <a class="btn" href="/">Go to Today</a>
+      <a class="btn primary" href="/">Go to Today</a>
+      {% if state.key and state.titles %}<form method="post" action="/run/fetch_and_score" class="inline"><button>Find &amp; score jobs</button></form>{% endif %}
     </div>
   </div>
   {% endif %}
 
-  <div class="small muted" style="margin-top:14px">{% if step > 1 and step <= steps|length %}<a href="/setup?step={{ step - 1 }}">← Back</a> · {% endif %}<a href="/settings">Everything else is in Settings</a>{% if not dismissed %} · <form method="post" action="/setup/dismiss" class="inline"><button class="small" style="border:0; box-shadow:none; padding:0; color:var(--muted)">Don't show setup again</button></form>{% endif %}</div>
+  <div class="small muted" style="margin-top:14px">
+    {% if step > 1 and cur %}<a href="/setup?step={{ step - 1 }}">← Back</a> · {% endif %}
+    {% if cur %}<a href="/">Finish later</a> <span class="muted">(saved)</span> · {% endif %}
+    <a href="/settings">Everything else is in Settings</a>
+    {% if not dismissed %} · <form method="post" action="/setup/dismiss" class="inline"><button class="small link">Don't show setup again</button></form>{% endif %}
+  </div>
+  {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var b = document.getElementById('first-save'), w = document.getElementById('first-wait');
+  if (b) b.form.addEventListener('submit', function () { b.disabled = true; w.hidden = false; });
+})();
+</script>
 {% endblock %}

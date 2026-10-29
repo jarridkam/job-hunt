@@ -16,7 +16,7 @@
 <div class="card setup-strip row" style="justify-content:space-between">
   <span><b>Finish setup so nothing slips:</b>
   {% if not ready.name %}name &amp; email · {% endif %}{% if not ready.key %}API key · {% endif %}{% if not ready.resume %}resume · {% endif %}{% if not ready.titles %}target titles · {% endif %}{% if not ready.email %}<b>inbox</b> (this is what catches tests and interviews){% endif %}</span>
-  <a class="btn small primary" href="/setup">Finish setup</a>
+  <a class="btn small primary" href="/setup">Pick up setup{% if setup_min %} · ~{{ setup_min }} min{% endif %}</a>
 </div>
 {% endif %}
 
