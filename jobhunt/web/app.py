@@ -1163,11 +1163,15 @@ def application_followup(app_id: int, action: str = Form(...), note: str = Form(
 
 
 @app.post("/applications/{app_id}/status")
-def application_status(app_id: int, status: str = Form(...), detail: str = Form(""), applied_at: str = Form("")):
+def application_status(app_id: int, status: str = Form(...), detail: str = Form(""), applied_at: str = Form(""), next: str = Form("")):
+    if status not in messages.APP_STATUS:
+        return back(f"/applications/{app_id}", "unknown status")
+    tok = undo.record("applications", app_id)
     queue.set_status(app_id, status, detail or "Set manually", source="manual")
     if applied_at:
         db.update("applications", app_id, {"applied_at": applied_at})
-    return back(f"/applications/{app_id}", f"Marked as {messages.app_status(status)[0]}")
+    dest = next if next.startswith("/applications") else f"/applications/{app_id}"
+    return back(dest, f"Marked as {messages.app_status(status)[0]}", undo=tok)
 
 
 @app.post("/applications/{app_id}/notes")
@@ -1194,10 +1198,12 @@ def application_receipt(app_id: int):
 
 
 @app.post("/applications/{app_id}/delete")
-def application_delete(request: Request, app_id: int):
-    a = queue.remove(app_id)
+def application_delete(request: Request, app_id: int, next: str = Form("")):
+    # Removed from Applied on purpose: the job stays skipped instead of coming back as a new pick.
+    a = queue.remove(app_id, job_status="skipped" if next.startswith("/applications") else "new")
     in_queue = bool(a) and a.get("status") in ("queued", "drafting", "ready", "applying", "needs_attention", "failed")
-    return back("/queue" if in_queue else "/applications", "removed")
+    dest = next if next.startswith("/applications") else ("/queue" if in_queue else "/applications")
+    return back(dest, "Removed")
 
 
 # ---- assessments -------------------------------------------------------------

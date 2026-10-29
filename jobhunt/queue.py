@@ -29,8 +29,8 @@ def skip_job(job_id: int) -> None:
         set_status(app["id"], "withdrawn", "Skipped by user")
 
 
-def remove(app_id: int) -> dict | None:
-    """Delete an application and its events; the job goes back to 'new'. Returns the deleted row."""
+def remove(app_id: int, job_status: str = "new") -> dict | None:
+    """Delete an application and its events; the job goes back to `job_status` ('new' or 'skipped'). Returns the deleted row."""
     a = db.q1("SELECT job_id, status FROM applications WHERE id=?", (app_id,))
     db.execute("DELETE FROM application_events WHERE application_id=?", (app_id,))
     db.execute("UPDATE assessments SET application_id=NULL WHERE application_id=?", (app_id,))
@@ -38,7 +38,7 @@ def remove(app_id: int) -> dict | None:
     db.execute("DELETE FROM messages WHERE application_id=?", (app_id,))
     db.execute("DELETE FROM applications WHERE id=?", (app_id,))
     if a and a.get("job_id"):
-        db.update("jobs", a["job_id"], {"status": "new"})
+        db.update("jobs", a["job_id"], {"status": job_status if job_status in ("new", "skipped") else "new"})
     return a
 
 

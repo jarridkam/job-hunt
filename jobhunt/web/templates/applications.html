@@ -2,14 +2,30 @@
 {% import "_track.html" as tr %}
 {% block title %}Applied – jobhunt{% endblock %}
 {% macro card(c) -%}
-<a class="app-card" href="/applications/{{ c.id }}" data-name="{{ (c.company ~ ' ' ~ c.title)|lower }}">
+<div class="app-card" data-name="{{ (c.company ~ ' ' ~ c.title)|lower }}">
   <div class="top">
     <div class="mono {{ c.tint }}" aria-hidden="true">{{ c.initial }}</div>
-    <div class="body"><b>{{ c.company }}</b><span class="r">{{ c.title }}</span></div>
+    <div class="body"><a class="cover" href="/applications/{{ c.id }}"><b>{{ c.company }}</b></a><span class="r">{{ c.title }}</span></div>
     {% if c.tag %}<span class="tag {{ c.kind }}">{{ c.tag }}</span>{% endif %}
+    <button type="button" class="more" popovertarget="m{{ c.id }}" aria-label="More for {{ c.company }}">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
   </div>
   {% if c.status in ('submitted', 'screening', 'assessment', 'interview', 'offer') %}{{ tr.track(c.status, c.kind == 'mine') }}{% endif %}
-</a>
+</div>
+<div popover id="m{{ c.id }}" class="pop menu">
+  <div class="pop-head">{{ c.company }}<span class="small muted"> · {{ c.title }}</span></div>
+  {% if c.group != 'closed' %}
+  <form method="post" action="/applications/{{ c.id }}/status"><input type="hidden" name="next" value="/applications">
+    <input type="hidden" name="status" value="withdrawn"><input type="hidden" name="detail" value="You stepped back">
+    <button class="item"><b>I'm not going for this anymore</b><span>Moves it to closed. You can undo.</span></button></form>
+  <form method="post" action="/applications/{{ c.id }}/status"><input type="hidden" name="next" value="/applications">
+    <input type="hidden" name="status" value="rejected"><input type="hidden" name="detail" value="You heard no">
+    <button class="item"><b>They said no</b><span>Moves it to closed. You can undo.</span></button></form>
+  {% endif %}
+  <form method="post" action="/applications/{{ c.id }}/delete" data-confirm="Delete {{ c.company }} for good? Its history goes too, and this can't be undone.">
+    <input type="hidden" name="next" value="/applications">
+    <button class="item danger"><b>Delete it</b><span>Gone for good, with its history.</span></button></form>
+</div>
 {%- endmacro %}
 {% block body %}
 <div class="pagehead">
