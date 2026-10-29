@@ -679,6 +679,9 @@ def _refresh_read_flags(m: imaplib.IMAP4_SSL, account: str, log) -> None:
             log(f"flags uid {r['uid']}: {e}")
 
 
+MISSED_GRACE_HOURS = 72
+
+
 def mark_missed() -> int:
     now = datetime.now(timezone.utc)
     # Assumed deadlines are guesses: show them as overdue in the UI but never flip the status on their account.
@@ -692,7 +695,9 @@ def mark_missed() -> int:
                 due = due.replace(tzinfo=timezone.utc)
         except Exception:  # noqa: BLE001
             continue
-        if due < now:
+        # Grace period: test links often keep working after the stated deadline, so a test stays on Today,
+        # openable, for MISSED_GRACE_HOURS before it is filed as missed. Nothing ever blocks opening it.
+        if due < now - timedelta(hours=MISSED_GRACE_HOURS):
             db.update("assessments", r["id"], {"status": "missed"})
             n += 1
     return n

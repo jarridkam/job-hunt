@@ -50,11 +50,11 @@
 {% endif %}
 
 {% call sh.sheet('note-sheet', 'Note', '') %}
-<form method="post" action="" id="note-form">
+<form method="post" action="" id="note-form" data-autosave>
   <div class="small muted" id="note-for"></div>
   <textarea name="notes" id="note-text" style="min-height:160px" placeholder="Who you talked to, what they said, what to bring up next time"></textarea>
-  <input type="hidden" name="next" value="">
-  <div class="row" style="margin-top:8px"><button class="primary">Save note</button> <button type="button" class="small" data-sheet-close>Cancel</button></div>
+  <input type="hidden" name="next" value=""><input type="hidden" name="undo_token" value="">
+  <div class="row" style="margin-top:8px"><button class="primary">Save &amp; close</button> <span class="autosave-status small muted" aria-live="polite">Saves as you type</span></div>
 </form>
 {% endcall %}
 

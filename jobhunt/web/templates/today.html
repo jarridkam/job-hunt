@@ -12,17 +12,24 @@
   </div>
 </div>
 
-{% if not ready.all %}
+<div class="card next-up {{ nxt.tone }}">
+  <div class="next-main"><div class="todo-kind">Next up · {{ nxt.why }}</div>
+    <div class="next-title"><b>{{ nxt.title }}</b></div>{% if nxt.when %}<div class="small muted">{{ nxt.when }}</div>{% endif %}</div>
+  {% if nxt.post %}<form method="post" action="{{ nxt.post }}" class="inline"><button class="primary">{{ nxt.label }}</button></form>
+  {% else %}<a class="btn primary" href="{{ nxt.href }}" {% if nxt.href.startswith('http') or nxt.open_new %}target="_blank" rel="noopener"{% endif %}>{{ nxt.label }}</a>{% endif %}
+</div>
+
+{% if not ready.all and nxt.why != 'Setup' %}
 <div class="card setup-strip row" style="justify-content:space-between">
   <span><b>Finish setup so nothing slips:</b>
   {% if not ready.name %}name &amp; email · {% endif %}{% if not ready.key %}API key · {% endif %}{% if not ready.resume %}resume · {% endif %}{% if not ready.titles %}target titles · {% endif %}{% if not ready.email %}<b>inbox</b> (this is what catches tests and interviews){% endif %}</span>
-  <a class="btn small primary" href="/setup">Pick up setup{% if setup_min %} · ~{{ setup_min }} min{% endif %}</a>
+  <a class="btn small" href="/setup">Pick up setup{% if setup_min %} · ~{{ setup_min }} min{% endif %}</a>
 </div>
 {% endif %}
 
 <div class="card push-card row" id="push-card" hidden style="justify-content:space-between">
   <span><b>Get these on your phone.</b> <span class="small muted" id="push-hint">A push 3 days, 1 day and 3 hours before every test, and the day before every interview.</span></span>
-  <button class="small primary" type="button" id="push-enable">Turn on alerts</button>
+  <button class="small" type="button" id="push-enable">Turn on alerts</button>
 </div>
 
 <section class="due">
@@ -43,8 +50,8 @@
         {% for f in d.flags or [] %}<div class="small flag {{ 'spam' if loop.first and d.spam }}">⚠ {{ f }}</div>{% endfor %}
       </div>
       <div class="due-actions">
-        {% if d.href %}<a class="btn small {{ 'primary' if d.tone != 'later' }}" href="{{ d.href }}" {% if d.href.startswith('http') or d.open_new %}target="_blank" rel="noopener"{% endif %}>{{ d.action }}</a>{% endif %}
-        {% if d.prep %}<a class="btn small {{ 'primary' if d.prep_ready and d.tone in ('urgent','soon') }}" href="{{ d.prep }}">{{ 'Prep card' if d.prep_ready else 'Prep me' }}</a>{% endif %}
+        {% if d.href %}<a class="btn small" href="{{ d.href }}" {% if d.href.startswith('http') or d.open_new %}target="_blank" rel="noopener"{% endif %}>{{ d.action }}</a>{% endif %}
+        {% if d.prep %}<a class="btn small" href="{{ d.prep }}">{{ 'Prep card' if d.prep_ready else 'Prep me' }}</a>{% endif %}
         {% if d.done_url %}<form method="post" action="{{ d.done_url }}" class="inline"><input type="hidden" name="status" value="{{ d.done_value }}"><button class="small">{{ d.done_label }}</button></form>{% endif %}
       </div>
     </div>
@@ -63,9 +70,9 @@
     <div class="card todo-item {{ 'urgent' if i.urgent }} {{ 'problem' if i.problem }}">
       <div><div class="todo-kind">{{ i.kind }}</div><div><b>{{ i.title }}</b></div><div class="small muted">{{ i.detail }}</div></div>
       <div class="row todo-acts">
-      {% if i.post %}<form method="post" action="{{ i.post }}" class="inline"><button class="small {{ 'primary' if i.urgent }}">{{ i.action }}</button></form>
+      {% if i.post %}<form method="post" action="{{ i.post }}" class="inline"><button class="small">{{ i.action }}</button></form>
         <a class="small muted" href="{{ i.href }}">details</a>
-      {% else %}<a class="btn small {{ 'primary' if i.urgent }}" href="{{ i.href }}" {% if i.href.startswith('http') %}target="_blank" rel="noopener"{% endif %}>{{ i.action }}</a>{% endif %}
+      {% else %}<a class="btn small" href="{{ i.href }}" {% if i.href.startswith('http') %}target="_blank" rel="noopener"{% endif %}>{{ i.action }}</a>{% endif %}
       {% if i.dismiss %}<form method="post" action="{{ i.dismiss }}" class="inline"><button class="small link" title="Hide this">Hide</button></form>{% endif %}
       </div>
     </div>
@@ -83,7 +90,7 @@
     <tr><td>{{ sc.fit(j, 't%d' % j.id) }}</td>
       <td><a href="/jobs/{{ j.id }}">{{ j.title }}</a>{% if j.fit_summary %}<div class="small muted">{{ j.fit_summary[:120] }}</div>{% endif %}</td>
       <td>{{ j.company }}<div class="small muted">{{ j.location }}</div></td>
-      <td class="row">{% if j.status == 'new' %}<form method="post" action="/jobs/{{ j.id }}/queue" class="inline"><input type="hidden" name="draft" value="1"><button class="small primary">Apply</button></form>
+      <td class="row">{% if j.status == 'new' %}<form method="post" action="/jobs/{{ j.id }}/queue" class="inline"><input type="hidden" name="draft" value="1"><button class="small">Apply</button></form>
         <form method="post" action="/jobs/{{ j.id }}/skip" class="inline"><button class="small">Skip</button></form>{% else %}{{ job_pill(j.status) }}{% endif %}</td></tr>
     {% endfor %}
   </table>
@@ -101,7 +108,7 @@
 (function () {
   var last = {{ needs_total }};
   document.addEventListener('jobhunt:status', function (e) {
-    if (e.detail.needs_you !== undefined && e.detail.needs_you !== last) location.reload();
+    if (e.detail.needs_you !== undefined && e.detail.needs_you !== last && !window.jobhuntBusy()) location.reload();
   });
 })();
 </script>

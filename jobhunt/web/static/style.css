@@ -353,3 +353,14 @@ button.link { background: none; border: 0; color: var(--muted); padding: 2px 4px
 .prereqs li { margin: 10px 0; }
 .pre-min { display: inline-block; min-width: 54px; color: var(--muted); font-size: 12px; }
 .setup-meta { margin: 6px 0 2px; }
+
+/* next up: the one primary action on Today */
+.next-up { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; border-left: 4px solid var(--line); margin-bottom: 14px; }
+.next-up.urgent { border-left-color: var(--warn); }
+.next-up.soon { border-left-color: var(--accent); }
+.next-title { font-size: 17px; margin: 2px 0; }
+.next-main { min-width: 0; flex: 1 1 260px; }
+/* auto-save + undo */
+.autosave-status { margin-left: 8px; }
+.warn-text { color: var(--warn); }
+.toast-undo { margin-left: 10px; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; padding: 1px 10px; font: inherit; cursor: pointer; }

@@ -74,8 +74,10 @@
 (function () {
   var open = null;
   function show(el) { if (!el) return; if (open) hide(); el.hidden = false; open = el; document.body.classList.add('sheet-open');
+    el.dispatchEvent(new CustomEvent('sheet:open'));
     var f = el.querySelector('input:not([type=hidden]), select, textarea'); if (f && window.jobhuntDevice && window.jobhuntDevice() === 'desktop') f.focus(); }
-  function hide() { if (!open) return; open.hidden = true; open = null; document.body.classList.remove('sheet-open'); }
+  function hide() { if (!open) return; var el = open; open.hidden = true; open = null; document.body.classList.remove('sheet-open');
+    el.dispatchEvent(new CustomEvent('sheet:close')); }
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-sheet]'); if (t) { e.preventDefault(); show(document.getElementById(t.getAttribute('data-sheet'))); return; }
     if (e.target.closest('[data-sheet-close]') || (open && e.target === open)) { e.preventDefault(); hide(); }
@@ -85,19 +87,112 @@
 })();
 </script>
 <script>
+// Auto-save: <form data-autosave> saves while you type (debounced) and says "Saved · Undo". Closing the sheet
+// keeps everything; there is no Cancel to lose work with. Fields marked data-no-autosave (relinking to another
+// application) only change with the explicit Save button. A half-typed date never wipes the saved one.
+(function () {
+  window.jobhuntBusy = function () {
+    var a = document.activeElement;
+    return document.body.classList.contains('sheet-open') || !!document.querySelector('form[data-dirty]') ||
+      !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'checkbox');
+  };
+  function fieldDefault(el) {
+    if (el.tagName === 'SELECT') {
+      for (var i = 0; i < el.options.length; i++) if (el.options[i].defaultSelected) return el.options[i].value;
+      return el.options.length ? el.options[0].value : '';
+    }
+    return el.defaultValue;
+  }
+  function setup(f) {
+    var st = f.querySelector('.autosave-status'), tok = f.querySelector('input[name=undo_token]');
+    var timer = null, busy = false, again = false, saved = false, action = f.getAttribute('action');
+    var idle = st ? st.textContent : '';
+    function say(html, cls) { if (st) { st.innerHTML = html; st.className = 'autosave-status small ' + (cls || 'muted'); } }
+    function save() {
+      clearTimeout(timer); timer = null;
+      if (busy) { again = true; return; }
+      if (!f.getAttribute('action')) return;
+      var fd = new FormData(f);
+      f.querySelectorAll('[data-no-autosave]').forEach(function (el) { fd.set(el.name, fieldDefault(el)); });
+      f.querySelectorAll('input[type=datetime-local]').forEach(function (el) {
+        if (!el.value) fd.set(el.name, el.dataset.lastGood || el.defaultValue);
+      });
+      busy = true; say('Saving…');
+      fetch(f.getAttribute('action'), {method: 'POST', body: fd, headers: {'X-Autosave': '1'}, credentials: 'same-origin'})
+        .then(function (r) {
+          if (r.status === 401 || (r.redirected && /\/login/.test(r.url))) throw 'login';
+          return r.json().catch(function () { throw 'unexpected reply'; }).then(function (j) {
+            if (!r.ok || !j.ok) throw (j.error || 'failed'); return j; });
+        })
+        .then(function (j) {
+          saved = true; f.removeAttribute('data-dirty');
+          if (tok && j.undo) tok.value = j.undo;
+          f.querySelectorAll('input[type=datetime-local]').forEach(function (el) { if (el.value) el.dataset.lastGood = el.value; });
+          say('Saved' + (j.undo ? ' · <button type="button" class="link small" data-undo="' + j.undo + '">Undo</button>' : ''), 'ok-text');
+        })
+        .catch(function (e) {
+          if (e === 'login') say('Not saved: you were signed out. Your typing is still here. Sign in in another tab, then come back.', 'warn-text');
+          else say('Not saved (' + (typeof e === 'string' ? e : 'no connection') + '). Your typing is still here; it tries again on your next change.', 'warn-text');
+        })
+        .then(function () { busy = false; if (again) { again = false; save(); } });
+    }
+    function changed(e) {
+      if (!e.target.name || e.target.name === 'undo_token' || e.target.hasAttribute('data-no-autosave')) return;
+      f.setAttribute('data-dirty', '1');
+      clearTimeout(timer); timer = setTimeout(save, e.type === 'change' ? 150 : 900);
+    }
+    f.addEventListener('input', changed);
+    f.addEventListener('change', changed);
+    f.addEventListener('submit', function () { clearTimeout(timer); timer = null; });
+    window.addEventListener('focus', function () { if (f.hasAttribute('data-dirty') && !timer) save(); });
+    var sheet = f.closest('.sheet');
+    if (!sheet) return;
+    sheet.addEventListener('sheet:open', function () {
+      if (f.getAttribute('action') !== action) { action = f.getAttribute('action'); if (tok) tok.value = ''; saved = false; }
+      if (!f.hasAttribute('data-dirty')) say(idle);
+    });
+    sheet.addEventListener('sheet:close', function () {
+      if (timer || f.hasAttribute('data-dirty')) save();
+      var n = 0, w = setInterval(function () {   // once the last save lands, refresh the list behind the sheet
+        if (busy || timer) { if (++n < 50) return; }
+        clearInterval(w);
+        if (saved && !f.hasAttribute('data-dirty') && !document.body.classList.contains('sheet-open')) location.reload();
+      }, 150);
+    });
+  }
+  document.querySelectorAll('form[data-autosave]').forEach(setup);
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-undo]'); if (!b) return;
+    e.preventDefault(); b.disabled = true;
+    fetch('/undo/' + encodeURIComponent(b.getAttribute('data-undo')), {method: 'POST', headers: {'X-Autosave': '1'}, credentials: 'same-origin'})
+      .then(function (r) {
+        var u = new URL(location.href); u.searchParams.delete('undo');
+        u.searchParams.set('msg', r.ok ? 'Undone' : 'Nothing to undo. It may already be undone.');
+        location.href = u.pathname + u.search + u.hash;
+      });
+  });
+})();
+</script>
+<script>
 (function () {
   // Flash message -> toast, then strip ?msg= from the URL so refresh/back don't repeat it.
   var msg = {{ msg|tojson }};
   var toast = document.getElementById('toast');
   window.showToast = showToast;
-  function showToast(text, ms) {
+  function showToast(text, ms, undoTok) {
     toast.textContent = text; toast.style.display = 'block'; toast.classList.remove('hide');
+    if (undoTok) {
+      var ub = document.createElement('button'); ub.type = 'button'; ub.className = 'toast-undo'; ub.textContent = 'Undo';
+      ub.setAttribute('data-undo', undoTok); toast.appendChild(document.createTextNode(' ')); toast.appendChild(ub);
+    }
     clearTimeout(toast._t);
     toast._t = setTimeout(function () { toast.classList.add('hide'); setTimeout(function(){ toast.style.display='none'; }, 400); }, ms || 4500);
   }
   if (msg) {
-    showToast(msg);
-    try { var u = new URL(location.href); u.searchParams.delete('msg'); history.replaceState(null, '', u.pathname + (u.search || '')); } catch (e) {}
+    var undoTok = null;
+    try { undoTok = new URL(location.href).searchParams.get('undo'); } catch (e) {}
+    showToast(msg, undoTok ? 12000 : 0, undoTok);
+    try { var u = new URL(location.href); u.searchParams.delete('msg'); u.searchParams.delete('undo'); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); } catch (e) {}
   }
 
   // In-page confirm for forms with data-confirm="...": replaces the browser's confirm() dialog, which dims the
@@ -133,7 +228,7 @@
 
   // Live status: poll the backend; show running tasks in the corner box; toast + reload once when one finishes.
   var runbox = document.getElementById('runbox'), TAKEOVER = {{ takeover|tojson }};
-  var seenRunning = null, failures = 0, boot = null;
+  var seenRunning = null, failures = 0, boot = null, signedOutNoted = false, restartNoted = false;
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
   function elapsed(iso) {
     var sec = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
@@ -154,10 +249,17 @@
   }
   function tick() {
     fetch('/api/status', {cache: 'no-store'}).then(function (r) {
-      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); throw 0; }
+      if (r.status === 401) {
+        // Signed out. Never yank the page while something is being typed: say so and let them finish.
+        if (window.jobhuntBusy()) { if (!signedOutNoted) showToast("You've been signed out. Finish here, then sign in again; nothing you typed is lost.", 9000); signedOutNoted = true; throw 0; }
+        location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); throw 0;
+      }
       return r.json();
     }).then(function (s) {
-      if (boot && s.boot && s.boot !== boot) { showToast('Backend restarted - reloading', 1500); setTimeout(function () { location.reload(); }, 600); return; }
+      if (boot && s.boot && s.boot !== boot) {
+        if (window.jobhuntBusy()) { if (!restartNoted) showToast('jobhunt restarted. This page refreshes when you finish editing.', 5000); restartNoted = true; return; }
+        showToast('Backend restarted - reloading', 1500); setTimeout(function () { location.reload(); }, 600); return;
+      }
       boot = s.boot || boot;
       failures = 0;
       var live = s.live || [];
@@ -168,7 +270,7 @@
         var last = (s.recent || [])[0];
         if (last) showToast((last.status === 'failed' ? "Didn't finish: " : 'Done: ') + (last.label || last.kind) + ' - ' + (last.summary || '').slice(0, 160), 7000);
         seenRunning = null;
-        if (!document.activeElement || !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+        if (!window.jobhuntBusy()) {
           setTimeout(function () { location.reload(); }, 900);   // don't yank a form out from under the user
         }
       }

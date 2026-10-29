@@ -211,6 +211,14 @@ CREATE TABLE IF NOT EXISTS push_snooze (
     key TEXT PRIMARY KEY,
     until TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS undo_log (
+    token TEXT PRIMARY KEY,
+    tbl TEXT NOT NULL,
+    row_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    before_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 

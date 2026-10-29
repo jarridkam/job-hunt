@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from .. import calendar_feed, capture, config, db, facts, health, mail, receipts, deadlines, documents, email_tracker, followup, llm, matcher, notify, pipeline, queue, tasks, writer
-from .. import messages
+from .. import messages, undo
 from ..paths import SCREENSHOTS
 from . import auth, takeover
 
@@ -26,8 +26,14 @@ app = FastAPI(title="jobhunt", docs_url=None, redoc_url=None, openapi_url=None)
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    if path.startswith(auth.OPEN_PATHS) or auth.valid_session(request.cookies.get(auth.COOKIE)):
+    if path.startswith(auth.OPEN_PATHS):
         return await call_next(request)
+    tok = request.cookies.get(auth.COOKIE)
+    if auth.valid_session(tok):
+        response = await call_next(request)
+        if auth.needs_renewal(tok):
+            auth.set_cookie(response, request)
+        return response
     if path.startswith("/api/"):
         return JSONResponse({"error": "login required"}, status_code=401)
     nxt = path + (("?" + request.url.query) if request.url.query else "")
@@ -155,11 +161,15 @@ def render(request: Request, name: str, **ctx):
     return templates.TemplateResponse(request, name, ctx)
 
 
-def back(url: str, msg: str = "") -> RedirectResponse:
+def back(url: str, msg: str = "", undo: str = "") -> RedirectResponse:
     if msg:
         url, _, frag = url.partition("#")   # the query must come before any #anchor
-        url += ("&" if "?" in url else "?") + "msg=" + quote(msg) + ("#" + frag if frag else "")
+        url += ("&" if "?" in url else "?") + "msg=" + quote(msg) + (("&undo=" + quote(undo)) if undo else "") + ("#" + frag if frag else "")
     return RedirectResponse(url, status_code=303)
+
+
+def _autosave(request: Request) -> bool:
+    return request.headers.get("x-autosave") == "1"
 
 
 def back_here(request: Request, fallback: str, msg: str = "") -> RedirectResponse:
@@ -196,8 +206,7 @@ def _safe_next(nxt: str) -> str:
 
 def _logged_in(request: Request, nxt: str) -> RedirectResponse:
     r = RedirectResponse(_safe_next(nxt), status_code=303)
-    r.set_cookie(auth.COOKIE, auth.new_session(), max_age=auth.SESSION_DAYS * 86400, httponly=True,
-                 samesite="lax", secure=auth.is_https(request))
+    auth.set_cookie(r, request)
     return r
 
 
@@ -332,6 +341,8 @@ def due_items() -> list[dict]:
                 flags.append("Test links sometimes die before the stated date. Don't leave it to the last day.")
             if at < now:
                 big = "Overdue"
+                flags.insert(0, "Past the deadline, but try the link anyway; many stay open for days. "
+                                "If it's closed, reply to the recruiter and ask for a new one.")
         bits = _email_bits(x.get("email_id"))
         dom = bits["domain"]
         via = ""
@@ -370,6 +381,35 @@ def due_items() -> list[dict]:
     return out
 
 
+def _due_action(d: dict, tone: str) -> dict:
+    return {"why": d["kind"].split(" · ")[0], "title": f"{d['company']} — {d['what']}".strip(" —"),
+            "when": f"{d['big']} · {d['sub']}".strip(" ·"), "href": d["href"], "open_new": d["open_new"],
+            "label": d["action"], "tone": tone}
+
+
+def next_action(due: list[dict], needs: list[dict], setup_min: int, match_count: int) -> dict:
+    """The one thing to do next, so Today has a single primary button above the fold.
+    Order: a test or interview that is close, then anything urgent waiting on you, then setup, then matches."""
+    for d in due:
+        if d["big"] != "Happened" and (d["tone"] in ("urgent", "bad") or d["big"] in ("No deadline", "Pick a time")):
+            return _due_action(d, "urgent")
+    for i in needs:
+        if i.get("urgent"):
+            return {"why": i["kind"], "title": i["title"], "when": i.get("detail", ""), "href": i["href"],
+                    "post": i.get("post"), "label": i["action"], "tone": "urgent"}
+    for d in due:
+        if d["tone"] == "soon":
+            return _due_action(d, "soon")
+    if setup_min:
+        return {"why": "Setup", "title": "Finish setting up so nothing slips", "when": f"about {setup_min} min left",
+                "href": "/setup", "label": f"Pick up setup · ~{setup_min} min", "tone": "later"}
+    if match_count:
+        return {"why": "New matches", "title": f"{match_count} jobs worth a look", "when": "scored against your resume",
+                "href": "/jobs?status=match", "label": "Look at matches", "tone": "later"}
+    return {"why": "All caught up", "title": "Nothing urgent", "when": "find new jobs when you're ready",
+            "post": "/run/fetch_and_score", "href": "/jobs", "label": "Find & score jobs", "tone": "later"}
+
+
 @app.get("/", response_class=HTMLResponse)
 def today(request: Request):
     if setup_needed():
@@ -389,7 +429,9 @@ def today(request: Request):
     applied_n = sum(app_counts.get(s, 0) for s in ("submitted", "screening", "assessment", "interview", "offer"))
     queue_n = sum(app_counts.get(s, 0) for s in ("queued", "drafting", "ready", "review", "needs_attention"))
     setup_n, setup_min = setup_left()
-    return render(request, "today.html", ready=ready, setup_n=setup_n, setup_min=setup_min, due=due_items(), needs=needs, needs_total=len(items), top=top, stamps=health.stamps(),
+    due = due_items()
+    return render(request, "today.html", ready=ready, setup_n=setup_n, setup_min=setup_min, due=due,
+                  nxt=next_action(due, needs, setup_min, match_count), needs=needs, needs_total=len(items), top=top, stamps=health.stamps(),
                   match_count=match_count, applied_n=applied_n, queue_n=queue_n, running=tasks.running(),
                   last_run=db.q1("SELECT * FROM runs ORDER BY id DESC LIMIT 1"))
 
@@ -1034,10 +1076,13 @@ def application_status(app_id: int, status: str = Form(...), detail: str = Form(
 
 
 @app.post("/applications/{app_id}/notes")
-def application_notes(app_id: int, notes: str = Form(""), next: str = Form("")):
+def application_notes(app_id: int, request: Request, notes: str = Form(""), next: str = Form(""), undo_token: str = Form("")):
+    tok = undo.record("applications", app_id, token=undo_token)
     db.update("applications", app_id, {"notes": notes.strip() or None})
+    if _autosave(request):
+        return JSONResponse({"ok": bool(tok), "undo": tok})
     dest = next if next.startswith("/applications") else f"/applications/{app_id}"
-    return back(dest, "Note saved")
+    return back(dest, "Note saved", undo=tok)
 
 
 @app.post("/applications/{app_id}/why")
@@ -1153,12 +1198,14 @@ def interview_status(iid: int, status: str = Form(...)):
 
 
 @app.post("/interviews/{iid}/edit")
-def interview_edit(iid: int, starts_at: str = Form(""), duration_minutes: int = Form(0), stage: str = Form(""), format: str = Form(""),
-                   interviewer: str = Form(""), link: str = Form(""), location: str = Form(""), notes: str = Form(""),
-                   application_id: int = Form(0), new_role: str = Form("")):
+def interview_edit(iid: int, request: Request, starts_at: str = Form(""), duration_minutes: int = Form(0), stage: str = Form(""),
+                   format: str = Form(""), interviewer: str = Form(""), link: str = Form(""), location: str = Form(""),
+                   notes: str = Form(""), application_id: int = Form(0), new_role: str = Form(""), undo_token: str = Form("")):
     x = db.q1("SELECT * FROM interviews WHERE id=?", (iid,))
     if not x:
-        return back("/upcoming#interviews", "not found")
+        return JSONResponse({"ok": False, "error": "This interview was deleted."}, status_code=404) if _autosave(request) \
+            else back("/upcoming#interviews", "not found")
+    tok = undo.record("interviews", iid, token=undo_token)
     fields = {"duration_minutes": duration_minutes or None, "stage": stage or None, "format": format or None,
               "interviewer": interviewer or None, "link": link or None, "location": location or None, "notes": notes or None}
     shown = deadlines.to_local(x.get("starts_at")).strftime("%Y-%m-%dT%H:%M") if deadlines.to_local(x.get("starts_at")) else ""
@@ -1169,10 +1216,12 @@ def interview_edit(iid: int, starts_at: str = Form(""), duration_minutes: int = 
         if x["status"] in ("needs_scheduling", "scheduled"):
             fields["status"] = "scheduled" if at else "needs_scheduling"
     db.update("interviews", iid, fields)
+    if _autosave(request):
+        return JSONResponse({"ok": True, "undo": tok})
     if new_role.strip() or (application_id and application_id != x.get("application_id")):
         email_tracker.relink("interviews", iid, application_id or None, new_role)
         return back("/upcoming#interviews", "Saved. The interview is now linked to " + (new_role.strip() or "that application"))
-    return back("/upcoming#interviews", "Saved")
+    return back("/upcoming#interviews", "Saved", undo=tok)
 
 
 # ---- calendar + prep ------------------------------------------------------------
@@ -1353,8 +1402,9 @@ def interview_prep_start(iid: int):
 
 @app.post("/interviews/{iid}/delete")
 def interview_delete(iid: int):
+    tok = undo.record("interviews", iid, kind="delete")
     db.execute("DELETE FROM interviews WHERE id=?", (iid,))
-    return back("/upcoming#interviews", "deleted")
+    return back("/upcoming#interviews", "Interview deleted", undo=tok)
 
 
 @app.post("/assessments/new")
@@ -1394,8 +1444,12 @@ def assessment_status(aid: int, status: str = Form(...)):
 
 
 @app.post("/assessments/{aid}/edit")
-def assessment_edit(aid: int, due_at: str = Form(""), est_minutes: int = Form(0), notes: str = Form(""), link: str = Form(""),
-                    application_id: int = Form(0), new_role: str = Form("")):
+def assessment_edit(aid: int, request: Request, due_at: str = Form(""), est_minutes: int = Form(0), notes: str = Form(""),
+                    link: str = Form(""), application_id: int = Form(0), new_role: str = Form(""), undo_token: str = Form("")):
+    if not db.q1("SELECT 1 FROM assessments WHERE id=?", (aid,)):
+        return JSONResponse({"ok": False, "error": "This test was deleted."}, status_code=404) if _autosave(request) \
+            else back("/upcoming#assessments", "not found")
+    tok = undo.record("assessments", aid, token=undo_token)
     fields = {"est_minutes": est_minutes or None, "notes": notes, "link": link or None}
     cur = (db.q1("SELECT due_at FROM assessments WHERE id=?", (aid,)) or {}).get("due_at")
     shown = deadlines.to_local(cur).strftime("%Y-%m-%dT%H:%M") if deadlines.to_local(cur) else ""
@@ -1404,17 +1458,30 @@ def assessment_edit(aid: int, due_at: str = Form(""), est_minutes: int = Form(0)
         fields.update({"due_at": new_due, "due_source": "manual" if new_due else None,
                        "due_tz": deadlines.tz_label(deadlines.to_local(new_due)) if new_due else None})
     db.update("assessments", aid, fields)
+    if _autosave(request):
+        return JSONResponse({"ok": True, "undo": tok})
     cur_app = (db.q1("SELECT application_id FROM assessments WHERE id=?", (aid,)) or {}).get("application_id")
     if new_role.strip() or (application_id and application_id != cur_app):
         email_tracker.relink_assessment(aid, application_id or None, new_role)
         return back("/upcoming#assessments", "Saved. The assessment is now linked to " + (new_role.strip() or "that application"))
-    return back("/upcoming#assessments", "Saved")
+    return back("/upcoming#assessments", "Saved", undo=tok)
 
 
 @app.post("/assessments/{aid}/delete")
 def assessment_delete(aid: int):
+    tok = undo.record("assessments", aid, kind="delete")
     db.execute("DELETE FROM assessments WHERE id=?", (aid,))
-    return back("/upcoming#assessments", "deleted")
+    return back("/upcoming#assessments", "Test deleted", undo=tok)
+
+
+@app.post("/undo/{token}")
+def undo_change(token: str, request: Request):
+    r = undo.restore(token)
+    if _autosave(request):
+        return JSONResponse({"ok": bool(r)}, status_code=200 if r else 404)
+    if not r:
+        return back_here(request, "/", "Nothing to undo. It may already be undone.")
+    return back_here(request, "/", "Restored" if r["kind"] == "delete" else "Undone")
 
 
 # ---- documents ---------------------------------------------------------------

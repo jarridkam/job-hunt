@@ -64,6 +64,23 @@ def new_session() -> str:
     return f"{expiry}.{_sign(expiry)}"
 
 
+RENEW_BELOW_DAYS = 15
+
+
+def needs_renewal(token: str | None) -> bool:
+    """A valid session past its halfway point gets a fresh cookie, so anyone who uses jobhunt at least
+    every couple of weeks is never logged out, and never mid-edit."""
+    try:
+        return int(str(token).split(".", 1)[0]) - time.time() < RENEW_BELOW_DAYS * 86400
+    except ValueError:
+        return False
+
+
+def set_cookie(response, request: Request) -> None:
+    response.set_cookie(COOKIE, new_session(), max_age=SESSION_DAYS * 86400, httponly=True,
+                        samesite="lax", secure=is_https(request))
+
+
 def valid_session(token: str | None) -> bool:
     if not token or "." not in token or not password_set():
         return False
