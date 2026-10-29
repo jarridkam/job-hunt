@@ -1,0 +1,9 @@
+{# Sync inbox with a days box. Defaults to the time since the last sync; change it to look further back. #}
+{% macro sync_inbox(primary=False) -%}
+{%- set w = email_window() -%}
+<form method="post" action="/run/email" class="inline sync-form">
+  <button class="{{ 'primary' if primary }}">Sync inbox</button>
+  <label class="small muted sync-days">last <input type="number" name="days" value="{{ w.days }}" min="1" max="365"> day{{ 's' if w.days != 1 }}</label>
+  <span class="small muted">{% if w.last %}· last synced {{ w.last|rel }}{% else %}· first sync{% endif %}</span>
+</form>
+{%- endmacro %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>{{ d.kind }} <span class="muted">· {{ d.status }}</span></h1>
+<form method="post" action="/documents/{{ d.id }}/update">
+  <label>Title</label><input type="text" name="title" value="{{ d.title }}">
+  <label>Content (edit freely; this text is what the LLM sees)</label>
+  <textarea name="content" style="min-height:480px">{{ d.content }}</textarea>
+  <label>Notes</label><input type="text" name="notes" value="{{ d.notes or '' }}">
+  <div class="row" style="margin-top:10px"><button class="primary">Save</button><a class="btn" href="/documents">Back</a></div>
+</form>
+{% endblock %}

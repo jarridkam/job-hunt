@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Add – jobhunt{% endblock %}
+{% block body %}
+<div class="capture">
+<h1>Add</h1>
+<p class="small muted">A job link, or any message about an application: a recruiter text, a test invite, an interview time. One box; jobhunt works out which it is.</p>
+
+{% if result %}
+<div class="card {{ 'broken' if result.kind == 'error' else 'wait' }}" style="margin-bottom:12px"><b>{{ result.message }}</b>
+  {% if result.kind == 'nothing' %}<div class="small muted">Tip: for a posting, share the posting page itself (not a search list). For a message, paste the whole thing including who sent it.</div>{% endif %}
+</div>
+{% endif %}
+
+<form method="post" action="/capture" class="card" id="capture-form">
+  <input type="hidden" name="title" value="{{ title }}">
+  <div class="field"><label>Link (optional)</label><input type="url" name="url" value="{{ url }}" placeholder="https://… the job posting, or leave blank" inputmode="url" autocomplete="off"></div>
+  <div class="field"><label>Or paste the message / text</label><textarea name="text" placeholder="Paste a recruiter text, an invite email, or the job description">{{ text }}</textarea></div>
+  <div class="row"><button class="primary" id="capture-save">Save</button> <span class="small muted" id="capture-wait" hidden>Reading it… about 10 seconds.</span></div>
+</form>
+
+<div class="how">
+  <div class="card"><b>From your phone</b><div class="small muted">Install jobhunt (Add to Home Screen). Then any job page → Share → jobhunt lands here, filled in.</div></div>
+  <div class="card"><b>From email</b><div class="small muted">Forward any email to yourself with <code>[jobhunt]</code> in the subject (or just leave the <code>Fwd:</code>). The next inbox sync reads it even if it looks like nothing.</div></div>
+  <div class="card"><b>Not sure it's a job?</b><div class="small muted">Save it anyway. If it is a posting you get a fit score; if it is a message you get a test, interview or application on Today.</div></div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var f = document.getElementById('capture-form'), b = document.getElementById('capture-save'), w = document.getElementById('capture-wait');
+  f.addEventListener('submit', function () { b.disabled = true; w.hidden = false; });
+  // Arrived from the share sheet with a link: save straight away, nothing to decide.
+  var q = new URLSearchParams(location.search);
+  if (q.get('url') && !{{ 'true' if result else 'false' }}) f.requestSubmit ? f.requestSubmit() : f.submit();
+})();
+</script>
+{% endblock %}

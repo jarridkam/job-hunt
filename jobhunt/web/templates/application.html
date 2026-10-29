@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}{{ a.company }} – {{ a.title }}{% endblock %}
+{% block body %}
+<h1>{{ a.title }} <span class="muted">@ {{ a.company }}</span></h1>
+<div class="row small">
+  {{ app_pill(a.status) }}
+  {% if a.job %}<span>fit <b>{{ a.job.fit_score if a.job.fit_score is not none else '–' }}</b></span><a href="/jobs/{{ a.job.id }}">job details</a><a href="{{ a.job.apply_url or a.job.url }}" target="_blank">apply page ↗</a>{% endif %}
+  {% if a.applied_at %}<span class="muted">applied {{ a.applied_at|dt }}</span>{% endif %}
+  <a href="/messages/{{ a.id }}">messages</a>
+  {% if next_id %}<a href="/applications/{{ next_id }}">next in queue →</a>{% endif %}
+  {% if a.status in ('queued','drafting','ready','applying','needs_attention','failed') %}
+  <form method="post" action="/applications/{{ a.id }}/status" class="inline"><input type="hidden" name="status" value="submitted"><input type="hidden" name="detail" value="Applied manually (confirmed by you)"><button class="small primary">I applied ✓</button></form>
+  {% endif %}
+</div>
+
+{% if review %}
+{% set missing = review|selectattr('source', 'equalto', 'missing')|list %}
+{% set ai = review|selectattr('source', 'equalto', 'ai')|list %}
+{% set sure = review|rejectattr('source', 'in', ['missing', 'ai'])|list %}
+<div class="card review">
+  <h2>Check before it's sent</h2>
+  <div class="review-sum small">
+    <span class="pill broken">{{ missing|length }} need you</span>
+    <span class="pill wait">{{ ai|length }} written by AI</span>
+    <span class="pill good">{{ sure|length }} from your profile</span>
+    <span class="muted">{% if takeover %}<a href="/takeover">See the real form</a>{% else %}The form is open in a browser window on this PC.{% endif %}</span>
+  </div>
+  <form method="post" action="/applications/{{ a.id }}/review" id="review-form">
+    {% macro field(r) %}
+      {% if r.kind == 'file' %}<div class="small">📎 {{ r.value }}</div>
+      {% elif r.source == 'letter' %}<div class="small muted">Your cover letter (below on this page).</div>
+      {% elif r.options %}
+        <select name="f_{{ r.idx }}" data-orig="{{ r.value }}">
+          {% if not r.value %}<option value="">Choose…</option>{% endif %}
+          {% for o in r.options %}<option {{ 'selected' if o == r.value }}>{{ o }}</option>{% endfor %}
+          {% if r.value and r.value not in r.options %}<option selected>{{ r.value }}</option>{% endif %}
+        </select>
+      {% elif r.kind == 'textarea' or (r.value|length) > 80 %}<textarea name="f_{{ r.idx }}" rows="4" data-orig="{{ r.value }}">{{ r.value }}</textarea>
+      {% else %}<input type="text" name="f_{{ r.idx }}" value="{{ r.value }}" data-orig="{{ r.value }}" {% if r.source == 'missing' %}placeholder="Type your answer"{% endif %}>
+      {% endif %}
+      {% if r.kind != 'file' and r.source != 'letter' %}<label class="remember small" hidden><input type="checkbox" name="remember_{{ r.idx }}" value="1" checked> Remember this answer for next time</label>{% endif %}
+    {% endmacro %}
+
+    {% if missing %}
+    <h3 class="review-h broken-text">Needs you <span class="muted small">· the form asks something your profile doesn't cover</span></h3>
+    <div class="review-list">{% for r in missing %}
+      <div class="review-item src-missing"><div class="review-label">{{ r.label }}{% if r.required %} <span class="muted">*</span>{% endif %}</div>{{ field(r) }}</div>
+    {% endfor %}</div>
+    {% endif %}
+
+    {% if ai %}
+    <h3 class="review-h wait-text">Written by AI <span class="muted small">· read these, they are guesses from your resume</span></h3>
+    <div class="review-list">{% for r in ai %}
+      <div class="review-item src-ai {{ 'flagged' if r.check and r.check.status != 'supported' }}"><div class="review-label">{{ r.label }}{% if r.required %} <span class="muted">*</span>{% endif %} <span class="pill wait">AI-drafted</span></div>{{ field(r) }}
+        {% if r.check and r.check.status != 'supported' %}<div class="small broken-text">Not backed by your resume: <q>{{ r.check.quote or r.value[:80] }}</q>{% if r.check.note %} — {{ r.check.note }}{% endif %}</div>{% endif %}</div>
+    {% endfor %}</div>
+    {% endif %}
+
+    <details class="review-sure" {{ 'open' if not missing and not ai }}>
+      <summary class="review-h good-text">From your profile <span class="muted small">· {{ sure|length }} answers you have given before — tap to check or change</span></summary>
+      <div class="review-list compact">{% for r in sure %}
+        <div class="review-item src-{{ r.source }}">
+          <div class="review-label">{{ r.label }} <span class="pill">{{ {'profile':'profile','standard':'standard','letter':'letter','file':'file','you':'your edit'}[r.source] }}</span></div>
+          {{ field(r) }}</div>
+      {% endfor %}</div>
+    </details>
+
+    <div class="review-send row">
+      <button name="action" value="approve" class="primary" data-confirm="Send this application to {{ a.company }}?">Send application</button>
+      <button name="action" value="cancel" class="danger" formnovalidate data-confirm="Don't send? The browser closes and nothing is submitted.">Don't send</button>
+      <span class="small muted" id="review-changed"></span>
+    </div>
+  </form>
+</div>
+{% endif %}
+{% if drafting %}<div class="flash">Drafting cover letter… this page refreshes automatically.</div>{% endif %}
+{% if applying %}<div class="flash">{% if takeover %}Applying… if it needs you (captcha, odd question), <a class="btn small primary" href="/takeover">Take over the browser</a> and finish the form there; the result lands here.{% else %}Applying… a browser window is open. If it needs you, finish the form there; the result lands here.{% endif %}</div>{% endif %}
+
+<div class="two" style="margin-top:12px">
+  <div>
+    <h2>Cover letter</h2>
+    {% if a.job %}
+    <form method="post" action="/applications/{{ a.id }}/draft" class="row" style="margin-bottom:8px">
+      <input type="text" name="instruction" placeholder="{{ 'revision note, e.g. shorter, mention my capstone, less formal' if a.cover_letter else 'optional note for the first draft' }}" style="flex:1">
+      <button>{{ 'Redraft' if a.cover_letter else 'Draft' }}</button>
+    </form>
+    {% endif %}
+    {% if a.cover_letter %}
+    <div id="letter-read">
+      <div class="row small" id="letter" style="margin-bottom:6px">
+        {% if a.cover_letter_source == 'ai' %}<span class="pill wait">AI-drafted · not edited yet</span>
+        {% elif a.cover_letter_source == 'edited' %}<span class="pill good">AI draft, edited by you</span>
+        {% elif a.cover_letter_source == 'you' %}<span class="pill good">Written by you</span>{% endif %}
+        {% if check %}
+          <span class="pill {{ check.tone }}">fact check: {{ check.ok }}/{{ check.n }} claims backed by your resume</span>
+        {% elif not drafting %}
+          <form method="post" action="/applications/{{ a.id }}/check" class="inline"><button class="small">Fact-check this letter</button></form>
+        {% endif %}
+      </div>
+      {% if check and check.flagged %}
+      <div class="card factcheck {{ check.tone }}">
+        <b>Says things your resume does not.</b> <span class="small muted">Fix the wording or add the fact to your profile, then re-check.</span>
+        <ul class="small">{% for c in check.flagged %}<li><q>{{ c.quote }}</q> <span class="pill {{ 'broken' if c.status == 'contradicted' else 'wait' }}">{{ c.status }}</span>{% if c.note %} — {{ c.note }}{% endif %}{% if c.evidence %} <span class="muted">(resume: {{ c.evidence }})</span>{% endif %}</li>{% endfor %}</ul>
+        <form method="post" action="/applications/{{ a.id }}/check" class="inline"><button class="small">Re-check</button></form>
+      </div>
+      {% endif %}
+      <div class="paper">{{ a.cover_letter }}</div>
+      <div class="row" style="margin-top:8px">
+        <button type="button" id="letter-edit">Edit letter</button>
+        <button type="button" id="letter-copy">Copy</button>
+        <span class="small muted">{{ (a.cover_letter.split()|length) }} words{% if a.cover_letter_approved %} · <span class="check">approved</span>{% else %} · not approved yet{% endif %}</span>
+      </div>
+    </div>
+    {% endif %}
+    <form method="post" action="/applications/{{ a.id }}/save">
+      <textarea class="letter" id="letter-text" name="cover_letter" placeholder="No letter yet. Click Draft, then edit until it sounds like you." {% if a.cover_letter %}style="display:none"{% endif %}>{{ a.cover_letter or '' }}</textarea>
+      <label>Notes</label>
+      <textarea name="notes" style="min-height:50px">{{ a.notes or '' }}</textarea>
+      <div class="row" style="margin-top:8px">
+        <button>Save</button>
+        <button name="approve" value="1">Save &amp; approve</button>
+        {% if a.job %}<button name="apply_now" value="1" class="primary">Approve &amp; apply now</button>{% endif %}
+      </div>
+    </form>
+    {% if a.job and a.cover_letter and not a.cover_letter_approved %}<p class="small muted">Approving saves this letter as a voice sample so future drafts sound more like you.</p>{% endif %}
+  </div>
+  <div>
+    <div class="card">
+      <h2>Status</h2>
+      <form method="post" action="/applications/{{ a.id }}/status" class="row">
+        <select name="status" style="width:auto">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s==a.status }}>{{ app_label(s) }}</option>{% endfor %}</select>
+        <input type="text" name="detail" placeholder="note" style="width:180px">
+        <input type="date" name="applied_at" style="width:150px" title="applied date">
+        <button class="small">Update</button>
+      </form>
+      <form method="post" action="/applications/{{ a.id }}/delete" style="margin-top:8px" data-confirm="Remove this application?"><button class="danger small">Remove</button></form>
+    </div>
+
+    {% if receipt %}
+    <div class="card received" id="received" style="margin-top:12px">
+      <h2>What they received</h2>
+      <p class="small muted">Frozen {{ receipt.taken_at|dt }}{% if receipt.how == 'reconstructed' %} · <span class="warn-text">reconstructed after the fact</span>, so the posting and resume are as they are now, not as sent{% elif receipt.how == 'auto' %} · sent by auto-apply{% else %} · you marked it applied{% endif %}. For when a recruiter calls and you need to know which job this was.</p>
+      <form method="post" action="/applications/{{ a.id }}/why" class="why">
+        <label>Why I applied</label>
+        <div class="row"><input type="text" name="why" value="{{ receipt.why or '' }}" placeholder="one line, in your words" maxlength="300" style="flex:1">
+          <button class="small">Save</button></div>
+        {% if receipt.why and receipt.why_by != 'you' %}<div class="help">Suggested from the fit score. Change it to what you would say on the phone.</div>{% endif %}
+      </form>
+      <ul class="clean small received-list">
+        {% if receipt.job %}<li><b>Posting:</b> {{ receipt.job.title }} at {{ receipt.job.company }}{% if receipt.job.location %} · {{ receipt.job.location }}{% endif %}{% if receipt.job.fit_score is not none %} · fit {{ receipt.job.fit_score }}{% endif %}
+          {% if receipt.job.url %}<a href="{{ receipt.job.url }}" target="_blank" rel="noopener">live page ↗</a>{% endif %}
+          <details><summary>Job description as it was</summary><div class="desc">{{ receipt.job.description }}</div></details></li>{% endif %}
+        {% if receipt.resume %}<li><b>Resume:</b> {{ receipt.resume.title }}{% if receipt.resume.file %} ({{ receipt.resume.file }}){% endif %} · {{ receipt.resume.words }} words · <a href="/documents/{{ receipt.resume.doc_id }}">open</a>
+          <details><summary>Text as sent</summary><div class="desc">{{ receipt.resume.content }}</div></details></li>{% endif %}
+        {% if receipt.letter %}<li><b>Cover letter:</b> {{ receipt.letter.split()|length }} words {% if receipt.letter_source == 'ai' %}<span class="pill wait">AI-drafted, unedited</span>{% elif receipt.letter_source == 'edited' %}<span class="pill">AI draft, edited by you</span>{% endif %} <details><summary>As sent</summary><div class="paper">{{ receipt.letter }}</div></details></li>{% endif %}
+        {% if receipt.answers %}<li><b>Form answers:</b> {{ receipt.answers|length }}
+          {% set ai_n = receipt.answers|selectattr('source', 'equalto', 'ai')|list|length %}{% if ai_n %}· <span class="wait-text">{{ ai_n }} AI-drafted</span>{% endif %}
+          <details><summary>Every answer and where it came from</summary>
+            <table class="small answers"><tbody>{% for r in receipt.answers %}<tr class="src-{{ r.source }}"><td>{{ r.label }}</td><td>{{ r.value or '—' }}</td><td><span class="pill {{ 'wait' if r.source == 'ai' else 'closed' if r.source == 'missing' else '' }}">{{ r.source_label }}</span></td></tr>{% endfor %}</tbody></table>
+          </details></li>{% endif %}
+        {% if receipt.screenshot %}<li><b>Screenshot:</b> <a href="/screenshots/{{ receipt.screenshot.replace('\\','/').split('/')[-1] }}" target="_blank">final page</a></li>{% endif %}
+        {% if not receipt.job and not receipt.resume and not receipt.letter and not receipt.answers %}<li class="muted">Nothing on file: this application was found in your inbox, not sent from here.</li>{% endif %}
+      </ul>
+      {% if receipt.how == 'reconstructed' %}<form method="post" action="/applications/{{ a.id }}/receipt" class="inline" style="margin-top:6px"><button class="small">Retake snapshot now</button></form>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if fu and (fu.stale or fu.draft or fu.sent_at) %}
+    <div class="card followup" id="followup" style="margin-top:12px">
+      <h2>Follow up</h2>
+      {% if fu.stale %}<p class="small"><b>Quiet for {{ fu.quiet_days }} days.</b> A short, polite note often gets a reply, and it is fine to let it go instead.</p>
+      {% elif fu.sent_at %}<p class="small muted">You followed up {{ fu.sent_at|rel }}. If they stay quiet another {{ fu.days }} days this comes back.</p>
+      {% elif fu.snoozed %}<p class="small muted">Snoozed until {{ fu.snoozed|dt('%b %d') }}.</p>{% endif %}
+      {% if fu.contact %}<p class="small">Reply to <b>{{ fu.contact }}</b> (the last email about this application).</p>
+      {% else %}<p class="small muted">No recruiter address found. Reply to the confirmation email, or message the recruiter on LinkedIn.</p>{% endif %}
+      {% if fu.draft %}
+        <label>Subject</label><input type="text" id="fu-subject" value="{{ fu.draft.subject }}" readonly onclick="this.select()">
+        <label>Note</label><textarea id="fu-body" rows="8">{{ fu.draft.body }}</textarea>
+        <div class="row" style="margin-top:8px; gap:8px">
+          <button type="button" class="small" onclick="navigator.clipboard.writeText(document.getElementById('fu-body').value).then(function(){document.getElementById('fu-copied').style.display='inline'})">Copy note</button>
+          {% if fu.contact %}<a class="btn small" id="fu-mail" href="#" onclick="this.href='mailto:'+encodeURIComponent('{{ fu.contact }}')+'?subject='+encodeURIComponent(document.getElementById('fu-subject').value)+'&body='+encodeURIComponent(document.getElementById('fu-body').value)">Open in email app</a>{% endif %}
+          <span id="fu-copied" class="small ok-text" style="display:none">copied</span>
+          <form method="post" action="/applications/{{ a.id }}/followup/draft" class="inline"><button class="small">Rewrite</button></form>
+        </div>
+      {% elif fu.stale %}
+        <form method="post" action="/applications/{{ a.id }}/followup/draft" class="inline"><button class="primary">{{ 'Drafting…' if fu.busy else 'Draft a note for me' }}</button></form>
+      {% endif %}
+      {% if fu.stale or fu.draft %}
+      <form method="post" action="/applications/{{ a.id }}/followup" class="row" style="margin-top:10px; gap:8px" id="fu-form">
+        <input type="hidden" name="note" id="fu-note">
+        <button name="action" value="sent" class="{{ 'primary' if fu.draft }}" onclick="var b=document.getElementById('fu-body'); if(b) document.getElementById('fu-note').value=b.value">I sent it</button>
+        <button name="action" value="snooze" class="small">Ask me in a week</button>
+        <button name="action" value="giveup" class="small danger" data-confirm="Mark this one withdrawn? You can change the status later.">Let it go</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if a.interviews %}<div class="card" style="margin-top:12px"><h2>Interviews</h2>
+      <ul class="clean small">{% for x in a.interviews %}<li>{{ iv_pill(x.status) }} {{ x.stage or 'Interview' }}{% if x.format %} ({{ iv_format(x.format) }}){% endif %}
+        — {% if x.starts_at %}{{ x.starts_at|dt }} {{ x.starts_at|localtz }}{% else %}<span class="warn-text">time not set</span>{% endif %}
+        {% if x.interviewer %}· with {{ x.interviewer }}{% endif %} {% if x.link %}<a href="{{ x.link }}" target="_blank" rel="noopener">link</a>{% endif %}
+        <a href="/upcoming#interviews" class="muted">edit</a></li>{% endfor %}</ul></div>{% endif %}
+
+    {% if a.assessments %}<div class="card" style="margin-top:12px"><h2>Assessments</h2>
+      <ul class="clean small">{% for x in a.assessments %}<li>{{ as_pill(x.status) }} {{ x.platform or '' }} {{ x.title }} — due {{ x.due_at|dt }} {% if x.est_minutes %}· ~{{ x.est_minutes }} min{% endif %} {% if x.link %}<a href="{{ x.link }}" target="_blank">open</a>{% endif %}</li>{% endfor %}</ul></div>{% endif %}
+
+    <div class="card" style="margin-top:12px"><h2>Timeline</h2>
+      <ul class="clean small">{% for e in a.events %}<li><span class="muted">{{ e.happened_at|dt }}</span> <b>{{ event_label(e.event_type) }}</b> <span class="pill">{{ source_label(e.source) }}</span><div>{{ e.detail }}</div></li>{% endfor %}</ul></div>
+
+    {% if a.submit_log %}<div class="card" style="margin-top:12px"><h2>Auto-apply log</h2><pre>{{ a.submit_log }}</pre>
+      {% if a.screenshot_path %}<a href="/screenshots/{{ a.screenshot_path.replace('\\','/').split('/')[-1] }}" target="_blank"><img class="shot" src="/screenshots/{{ a.screenshot_path.replace('\\','/').split('/')[-1] }}"></a>{% endif %}</div>{% endif %}
+
+    {% if a.job %}<details style="margin-top:12px"><summary>Job description</summary><div class="desc">{{ a.job.description }}</div></details>{% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if fu and fu.busy %}<script>
+document.addEventListener('jobhunt:status', function (e) {
+  var r = e.detail.running || {}; if (!('followup-{{ a.id }}' in r)) location.reload();
+});
+</script>{% endif %}
+<script>
+// Review: any answer you change gets highlighted and offers "remember this answer" (saved to your profile on Send).
+(function () {
+  var form = document.getElementById('review-form'); if (!form) return;
+  var n = 0, counter = document.getElementById('review-changed');
+  function check(el) {
+    var item = el.closest('.review-item'); if (!item) return;
+    var changed = (el.value || '') !== (el.getAttribute('data-orig') || '');
+    item.classList.toggle('changed', changed);
+    var rem = item.querySelector('label.remember'); if (rem) rem.hidden = !changed;
+    n = form.querySelectorAll('.review-item.changed').length;
+    if (counter) counter.textContent = n ? n + ' answer' + (n === 1 ? '' : 's') + ' changed' : '';
+  }
+  form.addEventListener('input', function (e) { check(e.target); });
+  form.addEventListener('change', function (e) { check(e.target); });
+  form.querySelectorAll('[data-orig]').forEach(check);
+})();
+</script>
+<script>
+(function () {
+  var edit = document.getElementById('letter-edit'), copy = document.getElementById('letter-copy');
+  if (!edit) return;
+  var ta = document.getElementById('letter-text'), read = document.getElementById('letter-read');
+  edit.addEventListener('click', function () { read.style.display = 'none'; ta.style.display = ''; ta.focus(); });
+  copy.addEventListener('click', function () {
+    function done() { copy.textContent = 'Copied'; setTimeout(function () { copy.textContent = 'Copy'; }, 1500); }
+    if (navigator.clipboard) { navigator.clipboard.writeText(ta.value).then(done); return; }
+    ta.style.display = ''; ta.select(); document.execCommand('copy'); ta.style.display = 'none'; done();
+  });
+})();
+</script>
+{% endblock %}

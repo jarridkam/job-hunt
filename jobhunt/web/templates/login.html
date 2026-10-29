@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>jobhunt – log in</title>
+<link rel="stylesheet" href="/static/style.css?v={{ boot }}">
+</head>
+<body>
+<main class="login">
+  <div class="card">
+    <div class="brand">jobhunt</div>
+    {% if mode == 'closed' %}
+      <p>No password has been set yet.</p>
+      <p class="small muted">Open jobhunt on your PC (http://127.0.0.1:8765) to set one, then come back here.</p>
+    {% else %}
+      <form method="post" action="/login">
+        <input type="hidden" name="next" value="{{ next }}">
+        {% if mode == 'setup' %}
+          <p class="small muted">Set a password. You'll use it to open jobhunt from your phone or anywhere else.</p>
+          <label>New password (10+ characters)</label>
+          <input type="password" name="password" autocomplete="new-password" required minlength="10" autofocus>
+          <label>Confirm password</label>
+          <input type="password" name="confirm" autocomplete="new-password" required minlength="10">
+        {% else %}
+          <label>Password</label>
+          <input type="password" name="password" autocomplete="current-password" required autofocus>
+        {% endif %}
+        {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
+        <button class="primary" style="width:100%; margin-top:14px">{{ 'Set password' if mode == 'setup' else 'Log in' }}</button>
+      </form>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Settings</h1>
+<p class="small muted">New here? The <a href="/setup">guided setup</a> walks through the five things that matter.</p>
+<div class="row" style="margin-bottom:10px">
+  <form method="post" action="/settings/test_key" class="inline"><button class="small">Test API key</button></form>
+  <form method="post" action="/settings/test_email" class="inline"><button class="small">Test inbox login</button></form>
+  <form method="post" action="/settings/test_smtp" class="inline"><button class="small">Test sending (emails you)</button></form>
+  <form method="post" action="/settings/suggest" class="inline"><button class="small">Suggest target titles from resume</button></form>
+</div>
+<form method="post" action="/settings">
+{% set groups = [('LLM', ['anthropic_api_key','model_main','model_fast']),
+                 ('Search', ['search_titles','search_keywords','search_locations','remote_only','exclude_keywords','min_legit_score','min_fit_score','auto_queue_score','max_llm_scores_per_run','use_remote_boards','adzuna_country','adzuna_app_id','adzuna_app_key','jsearch_key']),
+                 ('You (used to fill application forms)', ['cand_first_name','cand_last_name','cand_email','cand_phone','cand_location','cand_linkedin','cand_github','cand_website','cand_degree','cand_work_auth','cand_sponsorship','cand_eeo_gender','cand_eeo_race','cand_eeo_hispanic','cand_eeo_veteran','cand_eeo_disability','cand_salary','cand_start_date','cand_extra_answers','voice_notes']),
+                 ('Auto-apply', ['review_before_submit','auto_submit','headless']),
+                 ('Phone alerts', ['notify_quiet_hours','notify_base_url','notify_webhook_url']),
+                 ('Email tracker', ['email_host','email_user','email_pass','email_auto_minutes','email_folder','smtp_host','smtp_port','email_scan_spam','email_since_days','email_max_per_sync','assessment_default_days','assessment_buffer_days','email_extra_keywords','email_hints'])] %}
+{% for gname, keys in groups %}
+<div class="card" style="margin-bottom:14px"><h2>{{ gname }}</h2>
+  <div class="grid">
+  {% for key, label, default, kind, help in specs if key in keys %}
+    <div class="field" {% if kind=='textarea' %}style="grid-column: 1 / -1"{% endif %}>
+      <label>{{ label }}</label>
+      {% if kind=='textarea' %}<textarea name="{{ key }}">{{ vals[key] }}</textarea>
+      {% elif kind=='bool' %}<input type="checkbox" name="{{ key }}" value="1" {{ 'checked' if vals[key] in ('1','true','yes','on') }}>
+      {% elif kind=='password' %}<input type="password" name="{{ key }}" placeholder="{{ '•••••• (set)' if vals[key] else '' }}">
+      {% elif kind=='number' %}<input type="number" name="{{ key }}" value="{{ vals[key] }}">
+      {% elif kind=='select' %}<select name="{{ key }}">{% for val, text in options[key] %}<option value="{{ val }}" {{ 'selected' if val==vals[key] }}>{{ text }}</option>{% endfor %}
+        {% if vals[key] and vals[key] not in options[key]|map(attribute=0)|list %}<option value="{{ vals[key] }}" selected>{{ vals[key] }} (custom)</option>{% endif %}</select>
+      {% else %}<input type="text" name="{{ key }}" value="{{ vals[key] }}">{% endif %}
+      {% if help %}<div class="help">{{ help }}</div>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+</div>
+{% endfor %}
+<button class="primary">Save settings</button>
+</form>
+
+<div class="card" style="margin-top:18px" id="labels"><h2>Status names</h2>
+  <p class="small muted">Call each stage what feels right to you. Blank = the default shown. Colours stay the same.</p>
+  <form method="post" action="/settings/labels">
+    <div class="grid labels-grid">{% for code, default, own in labels %}
+      <div class="field"><label>{{ 'Job: ' if code.startswith('job:') }}{{ default }}</label><input type="text" name="l_{{ code }}" value="{{ own }}" placeholder="{{ default }}" maxlength="40"></div>{% endfor %}
+    </div>
+    <button class="small">Save names</button>
+  </form>
+</div>
+
+<div class="card" style="margin-top:18px" id="alerts"><h2>Alerts on this device</h2>
+  <p class="small muted">Pushes go out for Don't-miss items only: tests 3 days, 1 day and 3 hours before the do-by date; interviews the day before and an hour before; invites waiting on you once. Nothing during quiet hours. {{ push_n }} device{{ '' if push_n == 1 else 's' }} subscribed.</p>
+  <div class="push-status">
+    <span class="small" id="push-this-device">Checking…</span>
+    <button type="button" class="small primary" id="push-on" hidden>Turn on here</button>
+    <button type="button" class="small" id="push-off" hidden>Turn off here</button>
+    <form method="post" action="/push/test" class="inline"><button class="small">Send a test alert</button></form>
+  </div>
+  {% if push_subs %}<ul class="small muted" style="margin:8px 0 0">{% for s in push_subs %}<li>{{ s.label or 'device' }} · since {{ s.created_at[:10] }}{% if s.last_error %} · <span class="bad">last send failed</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+</div>
+
+<div class="card" style="margin-top:18px"><h2>Login password</h2>
+  <p class="small muted">Changing it logs out every device, including this one.</p>
+  <form method="post" action="/password">
+    <div class="grid">
+      <div class="field"><label>Current password</label><input type="password" name="current" autocomplete="current-password" required></div>
+      <div class="field"><label>New password (10+ characters)</label><input type="password" name="new" autocomplete="new-password" minlength="10" required></div>
+      <div class="field"><label>Confirm new password</label><input type="password" name="confirm" autocomplete="new-password" minlength="10" required></div>
+    </div>
+    <button>Change password</button>
+  </form>
+</div>
+{% endblock %}

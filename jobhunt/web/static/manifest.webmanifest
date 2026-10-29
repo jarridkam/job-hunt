@@ -1,0 +1,21 @@
+{
+  "name": "jobhunt",
+  "short_name": "jobhunt",
+  "description": "Your job hunt: never miss a test or interview.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "share_target": { "action": "/capture", "method": "GET", "params": { "title": "title", "text": "text", "url": "url" } },
+  "shortcuts": [
+    { "name": "Add a job or message", "url": "/capture", "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Upcoming", "url": "/upcoming" }
+  ],
+  "background_color": "#121417",
+  "theme_color": "#121417",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/static/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

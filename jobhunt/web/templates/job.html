@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "_scores.html" as sc with context %}
+{% block title %}{{ job.title }} – {{ job.company }}{% endblock %}
+{% block body %}
+<h1>{{ job.title }} <span class="muted">@ {{ job.company }}</span></h1>
+<div class="row small">
+  {{ job_pill(job.status) }}
+  <span>fit {{ sc.fit(job, 'h') }}</span>
+  <span>legit {{ sc.legit(job, 'h') }}</span>
+  <span>{{ job.location }}{% if job.remote %} · remote{% endif %}</span>
+  {% if job.salary_min or job.salary_max %}<span>${{ job.salary_min|int if job.salary_min else '?' }} – ${{ job.salary_max|int if job.salary_max else '?' }}</span>{% endif %}
+  <span class="muted">posted {{ job.posted_at|dt }} · via {{ job.source }}{% if job.ats %} ({{ job.ats }}){% endif %}</span>
+  <a href="{{ job.url }}" target="_blank">posting ↗</a>
+  {% if job.apply_url and job.apply_url != job.url %}<a href="{{ job.apply_url }}" target="_blank">apply link ↗</a>{% endif %}
+</div>
+
+<div class="row" style="margin:12px 0">
+  {% if appl %}
+    <a class="btn primary" href="/applications/{{ appl.id }}">Open application ({{ app_label(appl.status) }})</a>
+  {% else %}
+    <form method="post" action="/jobs/{{ job.id }}/queue" class="inline"><input type="hidden" name="draft" value="1"><button class="primary">Queue &amp; draft cover letter</button></form>
+    <form method="post" action="/jobs/{{ job.id }}/queue" class="inline"><button>Queue only</button></form>
+  {% endif %}
+  <form method="post" action="/jobs/{{ job.id }}/skip" class="inline"><input type="hidden" name="next" value="/jobs/{{ job.id }}"><button>Skip</button></form>
+  <form method="post" action="/jobs/{{ job.id }}/rescore" class="inline"><button>Re-score</button></form>
+</div>
+
+<div class="two">
+  <div>
+    <h2>Description</h2>
+    <div class="desc">{{ job.description }}</div>
+  </div>
+  <div>
+    {% if job.fit_summary %}
+    <div class="card"><h2>Fit {{ job.fit_score }} · {{ sc.fit_band(job.fit_score, job.fit_summary or '') }}</h2><p>{{ job.fit_summary }}</p>
+      {% set pts = job.fit_reasons|loads %}{% if pts %}<b class="small">Matches</b><ul class="small">{% for p in pts %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+      {% set miss = job.fit_missing|loads %}{% if miss %}<b class="small">Not clearly met</b><ul class="small">{% for p in miss %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% endif %}
+    <div class="card" style="margin-top:12px"><h2>Legitimacy {{ job.legit_score }} · {{ sc.legit_band(job.legit_score) }}</h2>
+      <p class="small muted">Starts at 50, then:</p>
+      <ul class="small">{% for p in job.legit_reasons|loads %}<li>{{ p }}</li>{% endfor %}</ul></div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Take over – jobhunt{% endblock %}
+{% block body %}
+<h1>Take over the browser</h1>
+{% if available %}
+<p class="small muted">This is the server's auto-apply browser, live. Click or tap to use it; on a phone, open the noVNC side menu for the keyboard. Finish the form and submit; jobhunt spots the confirmation page and records it.</p>
+<iframe class="vnc" src="/novnc/vnc.html?path=vnc/ws&autoconnect=1&reconnect=1&resize=scale&show_dot=1" title="Auto-apply browser"></iframe>
+{% else %}
+<p>The take-over view only exists on the server. Here the auto-apply browser opens as a normal window on this PC.</p>
+{% endif %}
+{% endblock %}

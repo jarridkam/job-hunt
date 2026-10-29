@@ -1,0 +1,10 @@
+{# A side sheet (full screen on phones). Open it with <button data-sheet="ID">. Body is the caller block. #}
+{% macro sheet(id, title, sub='') -%}
+<div class="sheet" id="{{ id }}" hidden>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="{{ id }}-t">
+    <div class="sheet-head"><div><h2 id="{{ id }}-t">{{ title }}</h2>{% if sub %}<div class="sub">{{ sub }}</div>{% endif %}</div>
+      <button type="button" class="small" data-sheet-close aria-label="Close">✕</button></div>
+    {{ caller() }}
+  </div>
+</div>
+{%- endmacro %}

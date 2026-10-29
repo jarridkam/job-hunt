@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Messages – jobhunt{% endblock %}
+{% block body %}
+<div class="msgs {{ 'has-thread' if cur }}">
+<aside class="msgs-list">
+  <h1>Messages</h1>
+  <p class="small muted">Every email a company sent about an application, and your replies, in one place. Replies go out as real email from {{ from_addr or 'your inbox address' }}.</p>
+  {% if not items %}<div class="card small muted">Nothing yet. Sync your inbox: emails about your applications show up here.</div>{% endif %}
+  {% for t in items %}
+  <a class="msgs-item {{ 'on' if cur and cur.id == t.id }} {{ 'awaiting' if t.awaiting_you }}" href="/messages/{{ t.id }}">
+    <div class="msgs-row"><b>{{ t.company }}</b><span class="small muted">{{ t.last_at|rel }}</span></div>
+    <div class="small muted">{{ t.title }}</div>
+    <div class="small msgs-snip">{% if t.awaiting_you %}<span class="wait-text">Reply needed · </span>{% elif t.last.direction == 'out' %}<span class="muted">You: </span>{% endif %}{{ (t.last.subject or t.last.text or '')[:90] }}</div>
+  </a>
+  {% endfor %}
+</aside>
+
+<section class="msgs-thread">
+  {% if cur %}
+  <div class="msgs-head">
+    <a class="small msgs-back" href="/messages">← all</a>
+    <div><b>{{ cur.company }}</b> <span class="muted">· {{ cur.title }}</span> {{ app_pill(cur.status) }}</div>
+    <a class="small" href="/applications/{{ cur.id }}">application</a>
+  </div>
+  <div class="msgs-scroll" id="msgs-scroll">
+    {% for m in msgs %}
+    <div class="bubble {{ m.direction }}">
+      <div class="bubble-meta small muted">{{ m.who }} · {{ m.at|dt }}{% if m.direction == 'in' and m.event_type %} · {{ event_label(m.event_type) }}{% endif %}{% if m.folder == 'capture' %} · pasted{% endif %}</div>
+      {% if m.subject %}<div class="bubble-subj">{{ m.subject }}</div>{% endif %}
+      <div class="bubble-text">{{ m.text|trim }}</div>
+    </div>
+    {% endfor %}
+    {% if not msgs %}<div class="muted small">No messages on this application yet.</div>{% endif %}
+  </div>
+  <form method="post" action="/messages/{{ cur.id }}/send" class="compose" id="compose">
+    <div class="row small">
+      <input type="email" name="to" value="{{ target.to }}" placeholder="to@company.com" required style="flex:1">
+      <input type="text" name="subject" value="{{ target.subject }}" placeholder="subject" style="flex:1.4">
+      <input type="hidden" name="in_reply_to" value="{{ target.in_reply_to }}">
+    </div>
+    <textarea name="body" id="compose-body" placeholder="Write your reply, or let AI draft one and fix it up." required>{{ draft_body or '' }}</textarea>
+    <div class="row compose-bar">
+      <button class="primary" {% if not smtp_ready %}disabled title="Set your inbox login in Settings first"{% endif %}>Send email</button>
+      <button type="submit" formaction="/messages/{{ cur.id }}/draft" formnovalidate class="small">AI draft</button>
+      <input type="text" name="instruction" placeholder="optional: what to say, e.g. 'offer Tue/Thu afternoons'" class="small" style="flex:1">
+      {% if not smtp_ready %}<span class="small muted">Sending needs your inbox login in <a href="/settings#email">Settings</a>.</span>{% endif %}
+    </div>
+  </form>
+  {% else %}
+  <div class="msgs-empty muted small">Pick a conversation.</div>
+  {% endif %}
+</section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var s = document.getElementById('msgs-scroll'); if (s) s.scrollTop = s.scrollHeight;
+  var f = document.getElementById('compose'); if (!f) return;
+  f.addEventListener('submit', function (e) {
+    var b = e.submitter; if (b) { b.disabled = true; b.textContent = b.classList.contains('primary') ? 'Sending…' : 'Drafting…'; }
+  });
+  try { var k = 'jobhunt.compose.' + location.pathname, t = document.getElementById('compose-body');
+    if (t && !t.value) t.value = localStorage.getItem(k) || '';
+    t && t.addEventListener('input', function () { localStorage.setItem(k, t.value); });
+    f.addEventListener('submit', function (e) { if (e.submitter && e.submitter.classList.contains('primary')) localStorage.removeItem(k); });
+  } catch (err) {}
+})();
+</script>
+{% endblock %}

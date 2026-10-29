@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Company boards</h1>
+<p class="small muted">Companies whose careers pages run on Greenhouse, Lever, Ashby, or Workable. Their public job APIs are fetched directly: no scraping, no login, and auto-apply works best on these forms. Boards are also discovered automatically when aggregator results link to one.</p>
+<div class="grid">
+  <form method="post" action="/companies/add" class="card">
+    <h2>Add a company</h2>
+    <label>Paste any job link from their careers site</label><input type="text" name="url_or_token" placeholder="https://boards.greenhouse.io/acme/jobs/123  or  https://jobs.lever.co/acme/..." required>
+    <label>Company name (optional)</label><input type="text" name="name">
+    <label>ATS</label><select name="ats"><option value="auto">detect from link</option><option value="greenhouse">greenhouse (give board token)</option><option value="lever">lever</option><option value="ashby">ashby</option><option value="workable">workable</option></select>
+    <button class="primary" style="margin-top:10px">Add</button>
+  </form>
+  <form method="post" action="/companies/seed" class="card">
+    <h2>Starter list</h2>
+    <p class="small">Adds ~25 well-known tech company boards. Mostly software roles. Tokens are checked on the first fetch; wrong ones just show an error here.</p>
+    <button>Add starter boards</button>
+  </form>
+</div>
+<table>
+<tr><th>On</th><th>Company</th><th>ATS</th><th>Token</th><th>Last fetch</th><th>Error</th><th></th></tr>
+{% for c in rows %}
+<tr><td><form method="post" action="/companies/{{ c.id }}/toggle" class="inline"><button class="small">{{ '✓' if c.enabled else '–' }}</button></form></td>
+<td>{{ c.name }}{% if c.discovered %} <span class="pill">discovered</span>{% endif %}</td><td class="small">{{ c.ats }}</td><td class="small muted">{{ c.board_token }}</td>
+<td class="small muted">{{ c.last_fetch_at|rel }}</td><td class="small cross">{{ (c.last_error or '')[:80] }}</td>
+<td><form method="post" action="/companies/{{ c.id }}/delete" class="inline" data-confirm="Remove this company board and its jobs?"><button class="small danger">✕</button></form></td></tr>
+{% else %}<tr><td colspan="7" class="muted">No boards yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

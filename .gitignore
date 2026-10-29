@@ -1,0 +1,24 @@
+# Local environment
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Personal data: database, resumes, screenshots, browser profile, uploads. Never commit.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Tooling
+.claude/
+*.log
+.DS_Store
+Thumbs.db

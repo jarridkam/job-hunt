@@ -1,0 +1,53 @@
+{# Score badges: number + plain-word band; tap/click opens the breakdown (native popover, works on phones).
+   `j` is a job row (or a queue/application row joined with the job's score columns); `uid` keeps popover ids unique. #}
+
+{% macro fit_band(score, summary='') -%}
+  {%- if score is none -%}unscored
+  {%- elif score == 0 and summary and summary.startswith('Title outside') -%}title filtered
+  {%- elif score >= 85 -%}strong
+  {%- elif score >= min_fit -%}good
+  {%- elif score >= 50 -%}weak
+  {%- else -%}poor{%- endif -%}
+{%- endmacro %}
+
+{% macro legit_band(score) -%}
+  {%- if score is none -%}–{%- elif score >= 80 -%}trusted{%- elif score >= min_legit -%}ok{%- else -%}doubtful{%- endif -%}
+{%- endmacro %}
+
+{% macro fit(j, uid) -%}
+{%- set s = j.fit_score -%}
+{%- set band = fit_band(s, j.fit_summary or '') -%}
+{%- if s is none -%}<span class="muted">–</span>
+{%- else -%}
+<button type="button" class="badge fit-{{ band|replace(' ', '-') }}" popovertarget="fit-{{ uid }}" title="Why {{ s }}?">
+  <b>{{ s }}</b><span>{{ band }}</span></button>
+<div popover id="fit-{{ uid }}" class="pop">
+  <div class="pop-head">Fit {{ s }} · {{ band }}</div>
+  {% if band == 'title filtered' %}
+    <p class="small">Not sent to the AI: the title doesn't match your <i>Target job titles</i> or contains an <i>Exclude</i> word (Settings).</p>
+  {% else %}
+    {% if j.fit_summary %}<p class="small">{{ j.fit_summary }}</p>{% endif %}
+    {% set pts = j.fit_reasons|loads %}{% if pts %}<b class="small">Matches</b><ul class="small">{% for p in pts %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+    {% set miss = j.fit_missing|loads %}{% if miss %}<b class="small">Not clearly met</b><ul class="small">{% for p in miss %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+    {% if s <= 45 %}<p class="small muted">Scores are capped at 45 when the role is above your seniority.</p>{% endif %}
+  {% endif %}
+  <p class="small muted">85+ strong · {{ min_fit }}+ good (shown as a match) · 50+ weak · below 50 poor. {{ auto_queue }}+ is auto-queued.</p>
+</div>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro legit(j, uid) -%}
+{%- set s = j.legit_score -%}
+{%- if s is none -%}<span class="muted">–</span>
+{%- else -%}
+{%- set band = legit_band(s) -%}
+<button type="button" class="badge legit-{{ band }}" popovertarget="legit-{{ uid }}" title="Why {{ s }}?">
+  <b>{{ s }}</b><span>{{ band }}</span></button>
+<div popover id="legit-{{ uid }}" class="pop">
+  <div class="pop-head">Legit {{ s }} · {{ band }}</div>
+  <p class="small muted">Starts at 50, then:</p>
+  <ul class="small">{% for p in j.legit_reasons|loads %}<li>{{ p }}</li>{% else %}<li class="muted">no adjustments</li>{% endfor %}</ul>
+  <p class="small muted">80+ trusted · {{ min_legit }}+ ok · below {{ min_legit }} hidden as not legit.</p>
+</div>
+{%- endif -%}
+{%- endmacro %}

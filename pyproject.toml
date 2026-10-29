@@ -1,0 +1,31 @@
+[project]
+name = "jobhunt"
+version = "0.1.0"
+description = "Find legit jobs that fit you, rank them, draft sincere cover letters, auto-apply, and track assessments and applications."
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=1.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "pydantic>=2.7",
+    "httpx>=0.27",
+    "tzdata>=2024.1",
+    "playwright>=1.47",
+    "pypdf>=4.2",
+    "python-docx>=1.1",
+    "cryptography>=43",
+    "pywebpush>=2.0",
+    "pillow>=10",
+]
+
+[project.scripts]
+jobhunt = "jobhunt.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["jobhunt"]

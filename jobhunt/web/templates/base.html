@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}jobhunt{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css?v={{ boot }}">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#121417">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="jobhunt">
+<script>
+// Sets <html data-device="mobile|tablet|desktop"> (+ data-touch). Browsers can't tell a desktop from a laptop,
+// so "desktop" covers both. CSS can target html[data-device=mobile]; JS can read window.jobhuntDevice().
+(function () {
+  function detect() {
+    var ua = navigator.userAgent || '';
+    var touch = (navigator.maxTouchPoints || 0) > 0;
+    var ipad = /iPad/.test(ua) || (/Macintosh/.test(ua) && touch);   // iPadOS reports as a Mac
+    var phoneUA = /Mobi|iPhone|iPod|Android.+Mobile/.test(ua);
+    var tabletUA = ipad || (/Android/.test(ua) && !/Mobile/.test(ua));
+    var w = Math.min(screen.width || innerWidth, innerWidth || screen.width);
+    var d = phoneUA || (touch && w < 700) ? 'mobile' : (tabletUA || (touch && w < 1100 && /Android|iPad/.test(ua))) ? 'tablet' : 'desktop';
+    var el = document.documentElement;
+    el.setAttribute('data-device', d); el.setAttribute('data-touch', touch ? '1' : '0');
+    return d;
+  }
+  window.jobhuntDevice = function () { return document.documentElement.getAttribute('data-device') || detect(); };
+  detect();
+  window.addEventListener('resize', detect);
+})();
+</script>
+</head>
+<body>
+{% set here = request.url.path %}
+{% set sections = [
+  ('/', 'Today', '⌂', []),
+  ('/jobs', 'Jobs', '⌕', [('/jobs', 'Matches'), ('/queue', 'Queue')]),
+  ('/applications', 'Pipeline', '≡', [('/applications', 'Applications'), ('/messages', 'Messages'), ('/upcoming', 'Upcoming'), ('/companies', 'Companies')]),
+  ('/capture', 'Add', '+', []),
+  ('/settings', 'Settings', '⚙', [('/settings', 'Settings'), ('/documents', 'Documents'), ('/runs', 'Activity'), ('/dashboard', 'Stats')]),
+] %}
+{% set ns = namespace(active='/') %}
+{% for href, label, icon, subs in sections %}{% for s, _ in subs %}{% if here == s or here.startswith(s + '/') or here.startswith(s + '?') %}{% set ns.active = href %}{% endif %}{% endfor %}{% endfor %}
+<nav class="main-nav">
+  <a href="/" class="brand">jobhunt</a>
+  {% for href, label, icon, subs in sections %}
+  <a href="{{ href }}" class="tab {{ 'on' if ns.active == href }}"><span class="ico">{{ icon }}</span><span class="lbl">{{ label }}</span>{% if href == '/' %} <span id="nyc" class="count" style="display:none"></span>{% endif %}</a>
+  {% endfor %}
+  <form method="post" action="/logout" class="inline logout"><button class="small">Log out</button></form>
+</nav>
+{% for href, label, icon, subs in sections if href == ns.active and subs %}
+<div class="subnav">{% for s, l in subs %}<a href="{{ s }}" class="{{ 'on' if here == s or here.startswith(s + '/') }}">{{ l }}</a>{% endfor %}</div>
+{% endfor %}
+<main>
+<div id="toast" class="toast" style="display:none"></div>
+<div id="runbox" class="runbox" style="display:none"></div>
+<div id="confirm" class="modal" style="display:none">
+  <div class="modal-card">
+    <div id="confirm-text" class="modal-text"></div>
+    <div class="row" style="justify-content:flex-end; gap:8px">
+      <button type="button" class="small" id="confirm-no">Cancel</button>
+      <button type="button" class="small danger" id="confirm-yes">OK</button>
+    </div>
+  </div>
+</div>
+{% block body %}{% endblock %}
+</main>
+<script>
+// Sheets: <button data-sheet="id"> opens <div class="sheet" id="id" hidden>; backdrop, ✕ (data-sheet-close) or Esc closes.
+(function () {
+  var open = null;
+  function show(el) { if (!el) return; if (open) hide(); el.hidden = false; open = el; document.body.classList.add('sheet-open');
+    var f = el.querySelector('input:not([type=hidden]), select, textarea'); if (f && window.jobhuntDevice && window.jobhuntDevice() === 'desktop') f.focus(); }
+  function hide() { if (!open) return; open.hidden = true; open = null; document.body.classList.remove('sheet-open'); }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-sheet]'); if (t) { e.preventDefault(); show(document.getElementById(t.getAttribute('data-sheet'))); return; }
+    if (e.target.closest('[data-sheet-close]') || (open && e.target === open)) { e.preventDefault(); hide(); }
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
+  if (location.hash && location.hash.indexOf('#sheet-') === 0) show(document.getElementById(location.hash.slice(1)));
+})();
+</script>
+<script>
+(function () {
+  // Flash message -> toast, then strip ?msg= from the URL so refresh/back don't repeat it.
+  var msg = {{ msg|tojson }};
+  var toast = document.getElementById('toast');
+  window.showToast = showToast;
+  function showToast(text, ms) {
+    toast.textContent = text; toast.style.display = 'block'; toast.classList.remove('hide');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { toast.classList.add('hide'); setTimeout(function(){ toast.style.display='none'; }, 400); }, ms || 4500);
+  }
+  if (msg) {
+    showToast(msg);
+    try { var u = new URL(location.href); u.searchParams.delete('msg'); history.replaceState(null, '', u.pathname + (u.search || '')); } catch (e) {}
+  }
+
+  // In-page confirm for forms with data-confirm="...": replaces the browser's confirm() dialog, which dims the
+  // whole page and looks broken on a dark theme.
+  var modal = document.getElementById('confirm'), modalText = document.getElementById('confirm-text');
+  var pendingForm = null, pendingSubmitter = null;
+  function closeConfirm() { modal.style.display = 'none'; pendingForm = null; pendingSubmitter = null; }
+  document.getElementById('confirm-no').addEventListener('click', closeConfirm);
+  document.getElementById('confirm-yes').addEventListener('click', function () {
+    var f = pendingForm, b = pendingSubmitter; closeConfirm();
+    if (f) { f.dataset.confirmed = '1'; f.requestSubmit ? f.requestSubmit(b || undefined) : f.submit(); }
+  });
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeConfirm(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && pendingForm) closeConfirm(); });
+
+  document.querySelectorAll('form').forEach(function (f) {
+    f.addEventListener('submit', function (e) {
+      // A button's own data-confirm wins over the form's, so "Send" and "Don't send" can ask different questions.
+      var ask = (e.submitter && e.submitter.dataset.confirm) || f.dataset.confirm;
+      if (ask && f.dataset.confirmed !== '1') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        pendingForm = f; pendingSubmitter = e.submitter || null; modalText.textContent = ask; modal.style.display = 'flex';
+        document.getElementById('confirm-yes').focus();
+        return;
+      }
+      // Disable buttons and show a spinner so double-clicks don't double-run. Deferred: disabling the clicked
+      // button *during* the submit event makes browsers drop its name/value from the form data.
+      setTimeout(function () {
+        f.querySelectorAll('button').forEach(function (b) { b.disabled = true; b.classList.add('busy'); });
+      }, 0);
+    });
+  });
+
+  // Live status: poll the backend; show running tasks in the corner box; toast + reload once when one finishes.
+  var runbox = document.getElementById('runbox'), TAKEOVER = {{ takeover|tojson }};
+  var seenRunning = null, failures = 0, boot = null;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+  function elapsed(iso) {
+    var sec = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+    return sec < 60 ? sec + 's' : Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
+  }
+  function renderRunbox(live) {
+    if (!live.length) { runbox.style.display = 'none'; return; }
+    runbox.innerHTML = live.map(function (r) {
+      var lines = (r.tail || '').trim().split('\n');
+      var last = lines[lines.length - 1] || 'starting...';
+      return '<div class="run"><div class="run-head"><span class="spin"></span> <b>' + esc(r.label || r.kind) + '</b>' +
+             '<span class="muted"> ' + elapsed(r.started_at) + '</span>' +
+             (TAKEOVER && /^apply-/.test(r.kind) ? '<a href="/takeover" style="margin-left:auto">take over</a><a href="/runs" class="muted">log</a></div>'
+                                                : '<a href="/runs" class="muted" style="margin-left:auto">log</a></div>') +
+             '<div class="run-line" title="' + esc(last) + '">' + esc(last) + '</div></div>';
+    }).join('');
+    runbox.style.display = '';
+  }
+  function tick() {
+    fetch('/api/status', {cache: 'no-store'}).then(function (r) {
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); throw 0; }
+      return r.json();
+    }).then(function (s) {
+      if (boot && s.boot && s.boot !== boot) { showToast('Backend restarted - reloading', 1500); setTimeout(function () { location.reload(); }, 600); return; }
+      boot = s.boot || boot;
+      failures = 0;
+      var live = s.live || [];
+      renderRunbox(live);
+      if (live.length) {
+        seenRunning = live.map(function (r) { return r.kind; }).join(',');
+      } else if (seenRunning !== null) {
+        var last = (s.recent || [])[0];
+        if (last) showToast((last.status === 'failed' ? "Didn't finish: " : 'Done: ') + (last.label || last.kind) + ' - ' + (last.summary || '').slice(0, 160), 7000);
+        seenRunning = null;
+        if (!document.activeElement || !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+          setTimeout(function () { location.reload(); }, 900);   // don't yank a form out from under the user
+        }
+      }
+      var nyc = document.getElementById('nyc');
+      if (nyc) { nyc.textContent = s.needs_you || ''; nyc.style.display = s.needs_you ? '' : 'none'; }
+      document.title = (s.needs_you ? '(' + s.needs_you + ') ' : '') + document.title.replace(/^\(\d+\) /, '');
+      document.dispatchEvent(new CustomEvent('jobhunt:status', {detail: s}));
+    }).catch(function () {
+      if (++failures === 3) showToast('Lost connection to jobhunt backend. Is run.bat still running?', 8000);
+    });
+  }
+  tick(); setInterval(tick, 2000);
+})();
+</script>
+<script src="/static/push.js?v={{ boot }}" defer></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Documents</h1>
+<p class="small muted">One <b>active resume</b> is used for matching, drafting, and uploads. <b>Cover letters</b> (active or archived) are voice samples: the drafter imitates how they sound. Letters you approve are saved here automatically.</p>
+
+<div class="grid">
+  <form method="post" action="/documents/upload" enctype="multipart/form-data" class="card">
+    <h2>Upload (PDF / DOCX / TXT)</h2>
+    <label>Kind</label><select name="kind"><option value="resume">Resume</option><option value="cover_letter">Cover letter</option></select>
+    <label>Title</label><input type="text" name="title" placeholder="optional">
+    <label>File</label><input type="file" name="file" required>
+    <label>Notes</label><input type="text" name="notes">
+    <button class="primary" style="margin-top:10px">Upload</button>
+  </form>
+  <form method="post" action="/documents/paste" class="card">
+    <h2>Paste text</h2>
+    <label>Kind</label><select name="kind"><option value="resume">Resume</option><option value="cover_letter">Cover letter</option></select>
+    <label>Title</label><input type="text" name="title" placeholder="optional">
+    <label>Content</label><textarea name="content" required style="min-height:140px"></textarea>
+    <button class="primary" style="margin-top:10px">Save</button>
+  </form>
+</div>
+
+<h2>Resumes</h2>
+<table><tr><th>Status</th><th>Title</th><th>Updated</th><th>Chars</th><th></th></tr>
+{% for d in docs if d.kind=='resume' %}
+<tr><td><span class="pill {{ 'ok' if d.status=='active' }}">{{ d.status }}</span></td><td><a href="/documents/{{ d.id }}">{{ d.title }}</a>{% if d.file_path %} <span class="small muted">file</span>{% endif %}</td><td class="small muted">{{ d.updated_at|dt }}</td><td class="small muted">{{ d.content|length }}</td>
+<td class="row">{% if d.status!='active' %}<form method="post" action="/documents/{{ d.id }}/status" class="inline"><input type="hidden" name="status" value="active"><button class="small">Make active</button></form>{% else %}<form method="post" action="/documents/{{ d.id }}/status" class="inline"><input type="hidden" name="status" value="archived"><button class="small">Archive</button></form>{% endif %}
+<form method="post" action="/documents/{{ d.id }}/delete" class="inline" data-confirm="Delete this document?"><button class="small danger">✕</button></form></td></tr>
+{% else %}<tr><td colspan="5" class="muted">No resume yet.</td></tr>{% endfor %}</table>
+
+<h2>Cover letters (voice samples)</h2>
+<table><tr><th>Status</th><th>Title</th><th>Source</th><th>Updated</th><th></th></tr>
+{% for d in docs if d.kind=='cover_letter' %}
+<tr><td><span class="pill {{ 'ok' if d.status=='active' }}">{{ d.status }}</span></td><td><a href="/documents/{{ d.id }}">{{ d.title }}</a></td><td class="small muted">{{ d.source }}</td><td class="small muted">{{ d.updated_at|dt }}</td>
+<td class="row"><form method="post" action="/documents/{{ d.id }}/status" class="inline"><input type="hidden" name="status" value="{{ 'archived' if d.status=='active' else 'active' }}"><button class="small">{{ 'Archive' if d.status=='active' else 'Activate' }}</button></form>
+<form method="post" action="/documents/{{ d.id }}/delete" class="inline" data-confirm="Delete this document?"><button class="small danger">✕</button></form></td></tr>
+{% else %}<tr><td colspan="5" class="muted">None yet. Paste a letter you wrote and liked, if you have one.</td></tr>{% endfor %}</table>
+{% endblock %}

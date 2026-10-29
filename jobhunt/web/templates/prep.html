@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Prep: {{ x.company }} – jobhunt{% endblock %}
+{% block body %}
+<div class="prep">
+  <div class="small muted"><a href="/upcoming#interviews">← Upcoming</a></div>
+  <h1>{{ x.company }} <span class="muted">· {{ x.stage or 'Interview' }}</span></h1>
+  <div class="row small" style="gap:12px; margin-bottom:12px">
+    {% if x.starts_at %}<b>{{ x.starts_at|dt }}</b> <span class="muted">{{ x.starts_at|localtz }} · {{ x.starts_at|rel }}</span>{% else %}<span class="warn-text">time not set</span>{% endif %}
+    {% if x.format %}<span class="pill">{{ iv_format(x.format) }}</span>{% endif %}
+    {% if x.interviewer %}<span>with {{ x.interviewer }}</span>{% endif %}
+    {% if x.link %}<a class="btn small primary" href="{{ x.link }}" target="_blank" rel="noopener">Join</a>{% endif %}
+    <a class="btn small" href="/interviews/{{ x.id }}.ics" download>Add to calendar</a>
+  </div>
+
+  {% if card %}
+  <div class="card"><h2>In one breath</h2><p>{{ card.company_brief }}</p><p>{{ card.role_brief }}</p></div>
+
+  <div class="card" style="margin-top:12px"><h2>What you told them</h2>
+    <ul>{% for s in card.your_claims %}<li>{{ s }}</li>{% endfor %}</ul></div>
+
+  {% if card.gaps %}<div class="card" style="margin-top:12px"><h2>If they poke at a gap</h2>
+    <ul>{% for g in card.gaps %}<li><b>{{ g.gap }}</b> — {{ g.framing }}</li>{% endfor %}</ul></div>{% endif %}
+
+  <div class="card" style="margin-top:12px"><h2>Likely questions</h2>
+    <ol class="prep-q">{% for q in card.likely_questions %}<li><b>{{ q.question }}</b><div class="small muted">{{ q.pointer }}</div></li>{% endfor %}</ol></div>
+
+  <div class="card" style="margin-top:12px"><h2>Ask them</h2>
+    <ul>{% for q in card.ask_them %}<li>{{ q }}</li>{% endfor %}</ul></div>
+
+  <div class="card" style="margin-top:12px"><h2>Before you join</h2>
+    <ul class="clean">{% for c in card.checklist %}<li><label class="small" style="margin:4px 0; color:var(--fg)"><input type="checkbox"> {{ c }}</label></li>{% endfor %}</ul></div>
+
+  <div class="small muted" style="margin-top:12px">Written {{ x.prep_at|rel }} from the posting, your resume and your letter.
+    <form method="post" action="/interviews/{{ x.id }}/prep" class="inline"><button class="small">Rewrite</button></form></div>
+  {% else %}
+  <div class="card"><b>No prep card yet.</b>
+    <p class="small muted">One AI call turns the posting, your resume and the letter you sent into: what you claimed, how to frame gaps, likely questions, questions to ask, and a pre-call checklist.</p>
+    <form method="post" action="/interviews/{{ x.id }}/prep" class="inline"><button class="primary">{{ 'Writing…' if busy else 'Prep me' }}</button></form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+{% if busy %}<script>
+document.addEventListener('jobhunt:status', function (e) {
+  var r = e.detail.running || {}; if (!Object.keys(r).some(function (k) { return k === 'prep-{{ x.id }}'; })) location.reload();
+});
+</script>{% endif %}
+{% endblock %}

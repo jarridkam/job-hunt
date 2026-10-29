@@ -1,0 +1,27 @@
+# Runs on the server in /opt/jobhunt. Caddy owns ports 80/443 and gets the HTTPS certificate;
+# the app port is only reachable from Caddy.
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    env_file: /etc/jobhunt/secret.env      # JOBHUNT_SECRET_KEY, root-only, outside the data folder
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+    volumes:
+      - /opt/jobhunt/data:/data
+    shm_size: 1gb                          # Chromium crashes with Docker's default 64 MB /dev/shm
+    expose: ["8765"]
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE: ${SITE}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [app]
+
+volumes:
+  caddy_data:

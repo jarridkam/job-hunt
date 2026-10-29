@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% import "_sync.html" as sy with context %}
+{% import "_scores.html" as sc with context %}
+{% block title %}Today – jobhunt{% endblock %}
+{% block body %}
+<div class="today-head">
+  <div><h1>Today</h1>
+    <div class="stamps small">{% for s in stamps %}<span class="stamp {{ s.tone }}" title="{{ s.title }}"><span class="dot"></span>{{ s.label }} {{ s.when }}</span>{% endfor %}</div></div>
+  <div class="row small">
+    <form method="post" action="/run/fetch_and_score" class="inline"><button class="small">Find &amp; score jobs</button></form>
+    {{ sy.sync_inbox() }}
+  </div>
+</div>
+
+{% if not ready.all %}
+<div class="card setup-strip row" style="justify-content:space-between">
+  <span><b>Finish setup so nothing slips:</b>
+  {% if not ready.name %}name &amp; email · {% endif %}{% if not ready.key %}API key · {% endif %}{% if not ready.resume %}resume · {% endif %}{% if not ready.titles %}target titles · {% endif %}{% if not ready.email %}<b>inbox</b> (this is what catches tests and interviews){% endif %}</span>
+  <a class="btn small primary" href="/setup">Finish setup</a>
+</div>
+{% endif %}
+
+<div class="card push-card row" id="push-card" hidden style="justify-content:space-between">
+  <span><b>Get these on your phone.</b> <span class="small muted" id="push-hint">A push 3 days, 1 day and 3 hours before every test, and the day before every interview.</span></span>
+  <button class="small primary" type="button" id="push-enable">Turn on alerts</button>
+</div>
+
+<section class="due">
+  <h2>Don't miss <span class="muted small">· every test and interview, soonest first</span></h2>
+  {% if due %}
+  <div class="due-list">
+  {% for d in due %}
+    <div class="card due-item {{ d.tone }}">
+      <div class="due-when">
+        <div class="due-big">{{ d.big }}</div>{% if d.kind.startswith('Test') and d.big not in ('No deadline', 'Overdue') %}<div class="small muted">do it by</div>{% endif %}
+        <div class="due-sub">{{ d.sub }}</div>
+      </div>
+      <div class="due-main">
+        <div class="todo-kind">{{ d.kind }}</div>
+        <div class="due-title"><b>{{ d.company }}</b>{% if d.what %} — {{ d.what }}{% endif %}</div>
+        {% if d.via %}<div class="small muted">{{ d.via }}</div>{% endif %}
+        {% if d.detail %}<div class="small muted">{{ d.detail }}</div>{% endif %}
+        {% for f in d.flags or [] %}<div class="small flag {{ 'spam' if loop.first and d.spam }}">⚠ {{ f }}</div>{% endfor %}
+      </div>
+      <div class="due-actions">
+        {% if d.href %}<a class="btn small {{ 'primary' if d.tone != 'later' }}" href="{{ d.href }}" {% if d.href.startswith('http') or d.open_new %}target="_blank" rel="noopener"{% endif %}>{{ d.action }}</a>{% endif %}
+        {% if d.prep %}<a class="btn small {{ 'primary' if d.prep_ready and d.tone in ('urgent','soon') }}" href="{{ d.prep }}">{{ 'Prep card' if d.prep_ready else 'Prep me' }}</a>{% endif %}
+        {% if d.done_url %}<form method="post" action="{{ d.done_url }}" class="inline"><input type="hidden" name="status" value="{{ d.done_value }}"><button class="small">{{ d.done_label }}</button></form>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+  {% else %}
+  <div class="card"><b>Nothing due.</b> <span class="small muted">Tests and interviews from your inbox land here with a countdown. {% if ready.email %}Last inbox check {{ email_window().last|rel if email_window().last else 'never' }}.{% else %}<a href="/settings#email">Connect your inbox</a> to catch them.{% endif %}</span></div>
+  {% endif %}
+</section>
+
+{% if needs %}
+<section>
+  <h2>Needs you <span class="muted small">· {{ needs|length }}</span></h2>
+  <div class="todo">
+  {% for i in needs %}
+    <div class="card todo-item {{ 'urgent' if i.urgent }} {{ 'problem' if i.problem }}">
+      <div><div class="todo-kind">{{ i.kind }}</div><div><b>{{ i.title }}</b></div><div class="small muted">{{ i.detail }}</div></div>
+      <div class="row todo-acts">
+      {% if i.post %}<form method="post" action="{{ i.post }}" class="inline"><button class="small {{ 'primary' if i.urgent }}">{{ i.action }}</button></form>
+        <a class="small muted" href="{{ i.href }}">details</a>
+      {% else %}<a class="btn small {{ 'primary' if i.urgent }}" href="{{ i.href }}" {% if i.href.startswith('http') %}target="_blank" rel="noopener"{% endif %}>{{ i.action }}</a>{% endif %}
+      {% if i.dismiss %}<form method="post" action="{{ i.dismiss }}" class="inline"><button class="small link" title="Hide this">Hide</button></form>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section>
+  <h2>New matches <span class="muted small">· {{ match_count }} worth a look</span> <a class="small" href="/jobs?status=match" style="margin-left:8px">see all</a></h2>
+  {% if top %}
+  <table class="stack">
+    <tr><th>Fit</th><th>Job</th><th>Company</th><th></th></tr>
+    {% for j in top %}
+    <tr><td>{{ sc.fit(j, 't%d' % j.id) }}</td>
+      <td><a href="/jobs/{{ j.id }}">{{ j.title }}</a>{% if j.fit_summary %}<div class="small muted">{{ j.fit_summary[:120] }}</div>{% endif %}</td>
+      <td>{{ j.company }}<div class="small muted">{{ j.location }}</div></td>
+      <td class="row">{% if j.status == 'new' %}<form method="post" action="/jobs/{{ j.id }}/queue" class="inline"><input type="hidden" name="draft" value="1"><button class="small primary">Apply</button></form>
+        <form method="post" action="/jobs/{{ j.id }}/skip" class="inline"><button class="small">Skip</button></form>{% else %}{{ job_pill(j.status) }}{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted small">No scored matches yet. Press <b>Find &amp; score jobs</b>.</p>{% endif %}
+</section>
+
+<section class="small muted activity">
+  {% if running %}<span class="pill run">working</span> {% for k in running %}{{ task_label(k) }}{{ ', ' if not loop.last }}{% endfor %} ·{% endif %}
+  {% if last_run %}last: {{ task_label(last_run.kind) }} {{ last_run.started_at|rel }}{% if last_run.summary %} — {{ last_run.summary[:120] }}{% endif %} ·{% endif %}
+  <a href="/applications">{{ applied_n }} applied</a> · <a href="/queue">{{ queue_n }} in queue</a> · <a href="/runs">activity log</a>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var last = {{ needs_total }};
+  document.addEventListener('jobhunt:status', function (e) {
+    if (e.detail.needs_you !== undefined && e.detail.needs_you !== last) location.reload();
+  });
+})();
+</script>
+{% endblock %}

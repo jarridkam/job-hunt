@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Runs</h1>
+{% for r in runs %}
+<details {{ 'open' if loop.first }} id="run-{{ r.id }}" data-run="{{ r.id }}" data-status="{{ r.status }}">
+  <summary>{{ run_pill(r.status) }}{% set w = (r.warnings|fromjson) if r.warnings else [] %}{% if w %} <span class="pill wait">{{ w|length }} problem{{ 's' if w|length != 1 }}</span>{% endif %} <b>{{ task_label(r.kind) }}</b> <span class="small muted">{{ r.started_at|dt }} {% if r.finished_at %}→ {{ r.finished_at|dt('%H:%M') }}{% endif %}</span> <span class="small summary">{{ (r.summary or '')[:200] }}</span></summary>
+  <pre class="log">{{ r.log }}</pre>
+</details>
+{% else %}<p class="muted">No runs yet.</p>{% endfor %}
+{% endblock %}
+{% block scripts %}
+<script>
+if (location.hash.indexOf('#run-') === 0) { var d = document.querySelector(location.hash); if (d) { d.open = true; d.scrollIntoView(); } }
+// Stream the log of any running run into its <pre> without reloading the page.
+setInterval(function () {
+  document.querySelectorAll('details[data-status="running"]').forEach(function (d) {
+    fetch('/runs/' + d.dataset.run, {cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (run) {
+      var pre = d.querySelector('pre.log');
+      if (pre && run.log !== undefined && pre.textContent !== run.log) { pre.textContent = run.log; pre.scrollTop = pre.scrollHeight; }
+      if (run.status && run.status !== 'running') { d.dataset.status = run.status; d.querySelector('.summary').textContent = (run.summary || '').slice(0, 200); var p = d.querySelector('.pill'); p.textContent = run.status === 'failed' ? 'Failed' : 'Done'; p.className = 'pill ' + (run.status === 'failed' ? 'broken' : 'good'); }
+    });
+  });
+}, 2000);
+</script>
+{% endblock %}

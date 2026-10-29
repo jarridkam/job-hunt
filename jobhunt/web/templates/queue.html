@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% import "_scores.html" as sc with context %}
+{% block body %}
+<h1>Apply queue</h1>
+<p class="small muted">Work top to bottom: open one, read/edit the letter until it sounds like you, approve, apply. Approved letters become voice samples for the next drafts.</p>
+<div class="row" style="margin-bottom:10px">
+  <form method="post" action="/run/draft_all" class="inline"><button class="primary">Draft letters for everything queued</button></form>
+  <form id="qform" method="post" action="/queue/remove" class="inline" data-confirm="Remove the selected applications from the queue?"><button class="danger" id="qremove" disabled>Remove selected</button></form>
+</div>
+<table class="stack">
+<tr><th class="chk"><input type="checkbox" id="qall" aria-label="Select all"></th><th>Status</th><th>Fit</th><th>Job</th><th>Company</th><th>Letter</th><th></th></tr>
+{% for a in apps %}
+<tr>
+  <td class="chk">{% if a.status not in ('applying','review') %}<input type="checkbox" class="qsel" name="ids" value="{{ a.id }}" form="qform" aria-label="Select {{ a.title }}">{% endif %}</td>
+  <td data-label="Status">{{ app_pill(a.status) }}</td>
+  <td data-label="Fit">{{ sc.fit(a, 'q%d' % a.id) }}</td>
+  <td class="job"><a href="/applications/{{ a.id }}">{{ a.title }}</a><div class="small muted">{{ a.location }} · {{ a.ats or '' }}</div></td>
+  <td data-label="Company">{{ a.company }}</td>
+  <td data-label="Letter" class="small">{% if a.cover_letter %}{{ a.cover_letter.split()|length }} words{% if a.cover_letter_approved %} · <span class="check">approved</span>{% endif %}
+    <template id="letter-{{ a.id }}">{{ a.cover_letter }}</template>{% else %}<span class="muted">none</span>{% endif %}</td>
+  <td class="acts">{% if a.cover_letter %}<button type="button" class="small primary read-letter" data-id="{{ a.id }}" data-title="{{ a.title }} @ {{ a.company }}">Read letter</button>{% endif %}<a class="btn small" href="/applications/{{ a.id }}">Open</a>
+    {% if a.status not in ('applying','review') %}<form method="post" action="/applications/{{ a.id }}/delete" class="inline" data-confirm="Remove &quot;{{ a.title }}&quot; from the queue?"><button class="small danger">Remove</button></form>{% endif %}</td>
+</tr>
+{% else %}<tr><td colspan="7" class="muted">Queue empty. Go to <a href="/jobs">Jobs</a> and queue some matches.</td></tr>{% endfor %}
+</table>
+<div id="letter-modal" class="modal" style="display:none">
+  <div class="modal-card letter-card">
+    <div id="lm-title" style="font-weight:600; margin-bottom:8px"></div>
+    <div id="lm-body" class="paper"></div>
+    <div class="row" style="justify-content:flex-end; gap:8px; margin-top:12px">
+      <button type="button" class="small" id="lm-copy">Copy</button>
+      <a class="btn small primary" id="lm-open" href="#">Open &amp; edit</a>
+      <button type="button" class="small" id="lm-close">Close</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var m = document.getElementById('letter-modal'), body = document.getElementById('lm-body');
+  function close() { m.style.display = 'none'; }
+  document.querySelectorAll('.read-letter').forEach(function (b) {
+    b.addEventListener('click', function () {
+      body.textContent = document.getElementById('letter-' + b.dataset.id).content.textContent;
+      document.getElementById('lm-title').textContent = b.dataset.title;
+      document.getElementById('lm-open').href = '/applications/' + b.dataset.id;
+      m.style.display = 'flex';
+    });
+  });
+  document.getElementById('lm-close').addEventListener('click', close);
+  m.addEventListener('click', function (e) { if (e.target === m) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  var cp = document.getElementById('lm-copy');
+  cp.addEventListener('click', function () {
+    if (navigator.clipboard) navigator.clipboard.writeText(body.textContent).then(function () { cp.textContent = 'Copied'; setTimeout(function () { cp.textContent = 'Copy'; }, 1500); });
+  });
+})();
+(function () {
+  var all = document.getElementById('qall'), btn = document.getElementById('qremove');
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.qsel'));
+  function sync() { btn.disabled = !boxes.some(function (b) { return b.checked; }); }
+  all.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = all.checked; }); sync(); });
+  boxes.forEach(function (b) { b.addEventListener('change', sync); });
+})();
+</script>
+{% endblock %}
