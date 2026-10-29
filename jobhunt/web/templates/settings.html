@@ -37,16 +37,6 @@
 <button class="primary">Save settings</button>
 </form>
 
-<div class="card" style="margin-top:18px" id="labels"><h2>Status names</h2>
-  <p class="small muted">Call each stage what feels right to you. Blank = the default shown. Colours stay the same.</p>
-  <form method="post" action="/settings/labels">
-    <div class="grid labels-grid">{% for code, default, own in labels %}
-      <div class="field"><label>{{ 'Job: ' if code.startswith('job:') }}{{ default }}</label><input type="text" name="l_{{ code }}" value="{{ own }}" placeholder="{{ default }}" maxlength="40"></div>{% endfor %}
-    </div>
-    <button class="small">Save names</button>
-  </form>
-</div>
-
 <div class="card" style="margin-top:18px" id="alerts"><h2>Alerts on this device</h2>
   <p class="small muted">Pushes go out for Don't-miss items only: tests 3 days, 1 day and 3 hours before the do-by date; interviews the day before and an hour before; invites waiting on you once. Nothing during quiet hours. {{ push_n }} device{{ '' if push_n == 1 else 's' }} subscribed.</p>
   <div class="push-status">

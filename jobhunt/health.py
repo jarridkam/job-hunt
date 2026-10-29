@@ -141,28 +141,6 @@ def _ago(iso: str | None) -> str:
     return "yesterday" if d == 1 else f"{d} days ago"
 
 
-def stamps() -> list[dict]:
-    """The 'last worked' line on Today: [{label, when, tone, title}]."""
-    out = []
-    if config.get("email_user") and config.get("email_pass"):
-        ok = db.q1("SELECT finished_at FROM runs WHERE kind='email' AND status='done' ORDER BY id DESC LIMIT 1")
-        last = db.q1("SELECT status, finished_at, summary FROM runs WHERE kind='email' AND status!='running' ORDER BY id DESC LIMIT 1")
-        auto = auto_minutes()
-        if last and last["status"] == "failed":
-            out.append({"label": "Inbox check failed", "when": _ago(last["finished_at"]), "tone": "broken", "title": _cause(last)})
-        else:
-            stale = not ok or (datetime.now(timezone.utc) - (_aware(ok["finished_at"]) or datetime.min.replace(tzinfo=timezone.utc))) > timedelta(hours=INBOX_STALE_HOURS)
-            out.append({"label": "Inbox checked", "when": _ago(ok["finished_at"]) if ok else "never",
-                        "tone": "wait" if stale else "good", "title": f"Checks itself every {auto} min while jobhunt is running" if auto else "Automatic checks are off (Settings)"})
-    else:
-        out.append({"label": "Inbox", "when": "not connected", "tone": "wait", "title": "Connect it in Settings to catch tests and interviews"})
-    j = db.q1("SELECT status, finished_at, summary FROM runs WHERE kind IN ('fetch','fetch_and_score') AND status!='running' ORDER BY id DESC LIMIT 1")
-    if j:
-        out.append({"label": "Jobs fetch failed" if j["status"] == "failed" else "Jobs found", "when": _ago(j["finished_at"]),
-                    "tone": "broken" if j["status"] == "failed" else "good", "title": _cause(j) if j["status"] == "failed" else ""})
-    return out
-
-
 # ---- automatic inbox checks ------------------------------------------------------
 
 def auto_minutes() -> int:

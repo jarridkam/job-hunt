@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Picks – jobhunt{% endblock %}
+{% set tick %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>{% endset %}
+{% block body %}
+<div class="pagehead">
+  <div>
+    <div class="eyebrow">{% if card %}Say yes or no. jobhunt does the rest.{% else %}{{ 'Done for today' if done_n else 'Nothing waiting' }}{% endif %}</div>
+    <h1>Today's picks</h1>
+    {% if total %}
+    <div class="dots" aria-label="{{ done_n }} of {{ total }} decided">
+      {% for k in range(total) %}<i class="{{ 'done' if k < done_n else ('now' if k == done_n and card else '') }}"></i>{% endfor %}
+      <span>{% if card %}{{ done_n + 1 }} of {{ total }}{% else %}Done{% endif %}</span>
+    </div>
+    {% endif %}
+  </div>
+  <a class="small" href="/jobs">All matches</a>
+</div>
+
+{% if card %}
+<article class="pick">
+  <div class="co">
+    <div class="mono lg {{ card.tint }}" aria-hidden="true">{{ card.initial }}</div>
+    <div><b>{{ card.company }}</b>{% if card.about %}<span>{{ card.about }}</span>{% endif %}</div>
+  </div>
+  <div class="role"><a href="/jobs/{{ card.id }}">{{ card.role }}</a></div>
+  <div class="chips">{% for c in card.chips %}<span class="chip">{{ c }}</span>{% endfor %}{% if card.fit is not none %}<span class="chip">Fit {{ card.fit }}</span>{% endif %}</div>
+  {% if card.why or card.watch %}
+  <div class="why">
+    <div class="caps">Why it fits you</div>
+    {% for w in card.why %}<div class="item">{{ tick }}<span>{{ w }}</span></div>{% endfor %}
+    {% if card.watch %}<div class="item watch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg><span>{{ card.watch }}</span></div>{% endif %}
+  </div>
+  {% endif %}
+  <a class="small" href="/jobs/{{ card.id }}">Read the whole posting</a>
+</article>
+<div class="decide">
+  <form method="post" action="/jobs/{{ card.id }}/skip"><input type="hidden" name="next" value="{{ next_url }}"><button>Not for me</button></form>
+  <form method="post" action="/jobs/{{ card.id }}/queue"><input type="hidden" name="draft" value="1"><input type="hidden" name="next" value="{{ next_url }}"><button class="primary">Apply for me</button></form>
+</div>
+
+{% elif done_n %}
+<div class="hero calm">
+  <div class="kind">{{ done_n }} decided today</div>
+  <div class="what" style="font-family: var(--display); font-size: 30px; font-weight: 800; letter-spacing: -.02em">That's everyone for today.</div>
+  <div class="note" style="font-size: 16px">
+    {% if yes %}You said yes to {{ yes }}. jobhunt is writing the letters and filling the forms. You check each one before anything is sent.
+    {% else %}Nothing caught your eye. That's fine. New ones come in every day.{% endif %}
+  </div>
+  {% if first_ready %}<a class="btn big light" href="/applications/{{ first_ready.id }}">Check the first one</a>
+  {% else %}<a class="btn big light" href="/">Back to Today</a>{% endif %}
+  {% if extra > 0 %}<div class="seconds"><a class="btn" href="/picks?more={{ more + 1 }}">{{ extra }} more if you want them</a></div>{% endif %}
+</div>
+
+{% else %}
+<div class="card empty">
+  <b>No new picks yet.</b>
+  {% if finding %}Looking for jobs now. They show up here as they're scored.
+  {% elif can_find %}jobhunt looks for jobs matching your target titles and scores each one against your resume.
+  <form method="post" action="/run/fetch_and_score" style="margin-top:16px"><button class="primary">Find new jobs</button></form>
+  {% else %}Add your target job titles and resume first, so jobhunt knows what to look for.
+  <div style="margin-top:16px"><a class="btn primary" href="/setup">Finish setup</a></div>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

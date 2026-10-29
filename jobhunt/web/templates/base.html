@@ -4,11 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}jobhunt{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css?v={{ boot }}">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-<meta name="theme-color" content="#121417">
+<meta name="theme-color" content="#F2F3F6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0F12" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="jobhunt">
@@ -36,26 +40,36 @@
 </head>
 <body>
 {% set here = request.url.path %}
-{% set sections = [
-  ('/', 'Today', '⌂', []),
-  ('/jobs', 'Jobs', '⌕', [('/jobs', 'Matches'), ('/queue', 'Queue')]),
-  ('/applications', 'Pipeline', '≡', [('/applications', 'Applications'), ('/messages', 'Messages'), ('/upcoming', 'Upcoming'), ('/companies', 'Companies')]),
-  ('/capture', 'Add', '+', []),
-  ('/settings', 'Settings', '⚙', [('/settings', 'Settings'), ('/documents', 'Documents'), ('/runs', 'Activity'), ('/dashboard', 'Stats')]),
-] %}
-{% set ns = namespace(active='/') %}
-{% for href, label, icon, subs in sections %}{% for s, _ in subs %}{% if here == s or here.startswith(s + '/') or here.startswith(s + '?') %}{% set ns.active = href %}{% endif %}{% endfor %}{% endfor %}
-<nav class="main-nav">
+{# Three tabs. Everything else is reached from them, or sits behind the gear. #}
+{% macro _on(prefixes) %}{% for p in prefixes %}{% if here == p or (p != '/' and here.startswith(p)) %}on{% endif %}{% endfor %}{% endmacro %}
+{% set t_today = _on(['/', '/upcoming', '/interviews', '/assessments'])|trim %}
+{% set t_picks = _on(['/picks', '/jobs'])|trim %}
+{% set t_applied = _on(['/applications', '/queue', '/messages', '/takeover'])|trim %}
+{% set t_settings = _on(['/settings', '/documents', '/runs', '/setup', '/companies'])|trim %}
+<header class="topbar">
   <a href="/" class="brand">jobhunt</a>
-  {% for href, label, icon, subs in sections %}
-  <a href="{{ href }}" class="tab {{ 'on' if ns.active == href }}"><span class="ico">{{ icon }}</span><span class="lbl">{{ label }}</span>{% if href == '/' %} <span id="nyc" class="count" style="display:none"></span>{% endif %}</a>
-  {% endfor %}
-  <form method="post" action="/logout" class="inline logout"><button class="small">Log out</button></form>
-</nav>
-{% for href, label, icon, subs in sections if href == ns.active and subs %}
-<div class="subnav">{% for s, l in subs %}<a href="{{ s }}" class="{{ 'on' if here == s or here.startswith(s + '/') }}">{{ l }}</a>{% endfor %}</div>
-{% endfor %}
-<main>
+  <nav class="tabs3" aria-label="Main">
+    <a href="/" class="{{ 'on' if t_today }}" {% if t_today %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Today<span id="nyc" class="count" style="display:none"></span></a>
+    <a href="/picks" class="{{ 'on' if t_picks }}" {% if t_picks %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Picks</a>
+    <a href="/applications" class="{{ 'on' if t_applied }}" {% if t_applied %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>Applied</a>
+  </nav>
+  <div class="acts">
+    <a href="/capture" class="iconbtn {{ 'on' if here.startswith('/capture') }}" aria-label="Add a job or a message" title="Add a job or a message">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
+    <a href="/settings" class="iconbtn {{ 'on' if t_settings }}" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+  </div>
+</header>
+{% if t_settings and not here.startswith('/setup') %}
+<div class="subnav">
+  {% for s, l in [('/settings', 'Settings'), ('/documents', 'Resumes & documents'), ('/companies', 'Job sources'), ('/runs', 'Activity')] %}<a href="{{ s }}" class="{{ 'on' if here == s or here.startswith(s + '/') }}">{{ l }}</a>{% endfor %}
+  <form method="post" action="/logout" class="inline"><button class="small quiet">Log out</button></form>
+</div>
+{% endif %}
+<main class="{% block main_class %}{% endblock %}">
 <div id="toast" class="toast" style="display:none"></div>
 <div id="runbox" class="runbox" style="display:none"></div>
 <div id="confirm" class="modal" style="display:none">

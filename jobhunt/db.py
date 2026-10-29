@@ -235,6 +235,7 @@ def connect() -> sqlite3.Connection:
 
 
 MIGRATIONS = [
+    "ALTER TABLE jobs ADD COLUMN decided_at TEXT",               # when you said yes/no to it (Picks counts today's)
     "ALTER TABLE runs ADD COLUMN warnings TEXT",                 # JSON list: things that went wrong inside a run that still finished
     "ALTER TABLE runs ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE push_subscriptions ADD COLUMN last_error_at TEXT",

@@ -90,22 +90,12 @@ def task_label(kind: str) -> str:
     return TASK_LABELS.get(kind, kind.replace("_", " ").capitalize())
 
 
-def label_overrides() -> dict[str, str]:
-    """Your own names for statuses (Settings > Status names), as {code: label}."""
-    from . import config, db   # local: config imports nothing from here, but keep messages import-light
-    return {k: v for k, v in (db.loads(config.get("status_labels"), {}) or {}).items() if v and v.strip()}
-
-
 def app_status(code: str | None) -> tuple[str, str, str]:
-    base = APP_STATUS.get(code or "", ((code or "").replace("_", " ").capitalize(), "", ""))
-    own = label_overrides().get(code or "")
-    return (own.strip()[:40], base[1], base[2]) if own else base
+    return APP_STATUS.get(code or "", ((code or "").replace("_", " ").capitalize(), "", ""))
 
 
 def job_status(code: str | None) -> tuple[str, str, str]:
-    base = JOB_STATUS.get(code or "", ((code or "").replace("_", " ").capitalize(), "", ""))
-    own = label_overrides().get("job:" + (code or ""))
-    return (own.strip()[:40], base[1], base[2]) if own else base
+    return JOB_STATUS.get(code or "", ((code or "").replace("_", " ").capitalize(), "", ""))
 
 
 def friendly_error(e: BaseException | str) -> str:

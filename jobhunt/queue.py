@@ -17,13 +17,13 @@ def enqueue(job_id: int) -> int:
         "job_id": job_id, "company": job.get("company"), "title": job["title"], "status": "queued",
         "last_update_at": now, "created_at": now, "queue_order": order,
     })
-    db.update("jobs", job_id, {"status": "queued"})
+    db.update("jobs", job_id, {"status": "queued", "decided_at": now})
     db.add_event(app_id, "queued", "Added to apply queue")
     return app_id
 
 
 def skip_job(job_id: int) -> None:
-    db.update("jobs", job_id, {"status": "skipped"})
+    db.update("jobs", job_id, {"status": "skipped", "decided_at": db.now_iso()})
     app = db.q1("SELECT id FROM applications WHERE job_id=? AND status IN ('queued','drafting','ready')", (job_id,))
     if app:
         set_status(app["id"], "withdrawn", "Skipped by user")

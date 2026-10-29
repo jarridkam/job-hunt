@@ -1,86 +1,68 @@
 {% extends "base.html" %}
-{% import "_scores.html" as sc with context %}
-{% import "_sheet.html" as sh %}
+{% import "_track.html" as tr %}
+{% block title %}Applied – jobhunt{% endblock %}
+{% macro card(c) -%}
+<a class="app-card" href="/applications/{{ c.id }}" data-name="{{ (c.company ~ ' ' ~ c.title)|lower }}">
+  <div class="top">
+    <div class="mono {{ c.tint }}" aria-hidden="true">{{ c.initial }}</div>
+    <div class="body"><b>{{ c.company }}</b><span class="r">{{ c.title }}</span></div>
+    {% if c.tag %}<span class="tag {{ c.kind }}">{{ c.tag }}</span>{% endif %}
+  </div>
+  {% if c.status in ('submitted', 'screening', 'assessment', 'interview', 'offer') %}{{ tr.track(c.status, c.kind == 'mine') }}{% endif %}
+</a>
+{%- endmacro %}
 {% block body %}
-<h1>Applications</h1>
-{% set keep = "&sort=" ~ sort ~ ("&qtext=" ~ qtext if qtext else "") %}
-<form method="get" action="/applications" class="row filterbar" style="margin:6px 0 10px">
-  <input type="hidden" name="status" value="{{ status }}">
-  <input type="text" name="qtext" value="{{ qtext }}" placeholder="search company, role, notes" style="width:220px">
-  <label class="small">Sort <select name="sort" onchange="this.form.submit()">{% for k, v in sorts.items() %}<option value="{{ k }}" {{ 'selected' if k == sort }}>{{ v[0] }}</option>{% endfor %}</select></label>
-  <button class="small">Search</button>{% if qtext or sort != 'updated' %} <a class="small" href="/applications?status={{ status }}">clear</a>{% endif %}
-</form>
-<div class="tabs small">
-  <a href="/applications?status=applied{{ keep }}" class="{{ 'on' if status=='applied' }}">Applied ({{ applied_n }})</a>
-  <a href="/applications?status=all{{ keep }}" class="{{ 'on' if status=='all' }}">All</a>
-  <a href="/applications?status=active{{ keep }}" class="{{ 'on' if status=='active' }}">Active</a>
-  <a href="/applications?status=quiet{{ keep }}" class="{{ 'on' if status=='quiet' }}">Quiet ({{ quiet_n }})</a>
-  {% for s in ['submitted','screening','assessment','interview','offer','rejected','needs_attention','withdrawn'] %}
-    <a href="/applications?status={{ s }}{{ keep }}" class="{{ 'on' if status==s }}">{{ app_label(s) }} ({{ counts.get(s,0) }})</a>
-  {% endfor %}
+<div class="pagehead">
+  <div>
+    <div class="eyebrow">{{ live }} in motion</div>
+    <h1>Applied</h1>
+  </div>
+  {% if live > 8 %}<input type="text" id="find" placeholder="Find a company" aria-label="Find a company" style="max-width:220px">{% endif %}
 </div>
-{% macro app_table(rows) %}
-<table class="stack apps">
-<tr><th>Status</th><th>Company</th><th>Role</th><th>Next</th><th>Applied</th><th>Last update</th><th>Fit</th><th>Notes</th></tr>
-{% for a in rows %}
-<tr>
-  <td>{{ app_pill(a.status) }}</td>
-  <td data-label="Company"><a href="/applications/{{ a.id }}">{{ a.company }}</a></td>
-  <td data-label="Role">{{ a.title }}</td>
-  <td data-label="Next" class="small">{% if a.next_at %}<span class="{{ 'wait-text' if a.next_at < now_iso else '' }}">{{ a.next_at|rel }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-  <td data-label="Applied" class="small">{{ a.applied_at|dt('%b %d, %Y') }}</td>
-  <td data-label="Updated" class="small muted">{{ a.last_update_at|rel }}</td>
-  <td data-label="Fit">{{ sc.fit(a, 'a%d' % a.id) }}</td>
-  <td data-label="Notes" class="small note-cell"><button type="button" class="note-prev {{ 'empty' if not a.notes }}" data-sheet="note-sheet" data-note-id="{{ a.id }}" data-note-title="{{ a.company }} · {{ a.title }}" data-note="{{ a.notes or '' }}" title="{{ a.notes or 'Add a note' }}">{{ (a.notes or '').strip().split('\n')[0][:70] or '+ note' }}{% if a.notes and ((a.notes|length) > 70 or '\n' in a.notes.strip()) %}…{% endif %}</button></td>
-</tr>
-{% endfor %}
-</table>
-{% endmacro %}
-{% if sort in ('deadline', 'fit', 'company', 'posted') %}
-  {% if apps %}{{ app_table(apps) }}{% else %}<p class="muted">Nothing here{% if qtext %} for "{{ qtext }}"{% endif %}.</p>{% endif %}
-{% else %}
-{% for sec in apps|month_sections('applied_at', 'created_at') %}
-<details class="month" {{ 'open' if sec.open }}><summary>{{ sec.label }} <span class="muted">· {{ sec.count }}</span></summary>
-{% for m in sec.months %}
-{% if sec.months|length > 1 or not sec.open %}<h3>{{ m.label }} <span class="muted small">· {{ m.rows|length }}</span></h3>{% endif %}
-{{ app_table(m.rows) }}
-{% endfor %}
-</details>
-{% else %}<p class="muted">{% if qtext %}Nothing for "{{ qtext }}".{% else %}None yet.{% endif %}</p>{% endfor %}
+
+{% if groups.mine %}
+<div class="eyebrow section-label">Your move</div>
+{% for c in groups.mine %}{{ card(c) }}{% endfor %}
 {% endif %}
 
-{% call sh.sheet('note-sheet', 'Note', '') %}
-<form method="post" action="" id="note-form" data-autosave>
-  <div class="small muted" id="note-for"></div>
-  <textarea name="notes" id="note-text" style="min-height:160px" placeholder="Who you talked to, what they said, what to bring up next time"></textarea>
-  <input type="hidden" name="next" value=""><input type="hidden" name="undo_token" value="">
-  <div class="row" style="margin-top:8px"><button class="primary">Save &amp; close</button> <span class="autosave-status small muted" aria-live="polite">Saves as you type</span></div>
-</form>
-{% endcall %}
+{% if groups.busy %}
+<div class="eyebrow section-label">Being prepared</div>
+{% for c in groups.busy %}{{ card(c) }}{% endfor %}
+{% endif %}
 
-<details><summary>Add an application you made elsewhere</summary>
-<form method="post" action="/applications/new" class="card" style="margin-top:8px">
-  <div class="row">
-    <div style="flex:1"><label>Company</label><input type="text" name="company" required></div>
-    <div style="flex:1"><label>Role</label><input type="text" name="title"></div>
-    <div><label>Status</label><select name="status">{% for s in ['submitted','screening','assessment','interview','offer','rejected'] %}<option value="{{ s }}">{{ app_label(s) }}</option>{% endfor %}</select></div>
-    <div><label>Applied on</label><input type="date" name="applied_at"></div>
-  </div>
-  <label>Link</label><input type="url" name="url">
-  <label>Notes</label><textarea name="notes" style="min-height:50px"></textarea>
-  <button style="margin-top:8px">Add</button>
-</form></details>
+{% if groups.theirs %}
+<div class="eyebrow section-label">Their move</div>
+{% for c in groups.theirs[:12] %}{{ card(c) }}{% endfor %}
+{% if groups.theirs|length > 12 %}
+<details class="closed-apps" id="more-theirs">
+  <summary>{{ groups.theirs|length - 12 }} more waiting to hear back</summary>
+  {% for c in groups.theirs[12:] %}{{ card(c) }}{% endfor %}
+</details>
+{% endif %}
+{% endif %}
+
+{% if not live %}
+<div class="card empty"><b>Nothing sent yet.</b>Say yes to a job in <a href="/picks">Picks</a>, or <a href="/capture">add one you applied to</a>.</div>
+{% endif %}
+
+{% if groups.closed %}
+<details class="closed-apps" id="closed">
+  <summary>{{ groups.closed|length }} closed, kept for your records</summary>
+  {% for c in groups.closed %}{{ card(c) }}{% endfor %}
+</details>
+{% endif %}
+
+<p class="small muted" style="text-align:center; margin-top:22px"><a href="/upcoming">All tests &amp; interviews</a> · <a href="/messages">All emails</a></p>
 {% endblock %}
 {% block scripts %}
 <script>
-document.addEventListener('click', function (e) {
-  var b = e.target.closest('.note-prev'); if (!b) return;
-  var f = document.getElementById('note-form');
-  f.action = '/applications/' + b.dataset.noteId + '/notes';
-  f.elements.next.value = location.pathname + location.search;
-  document.getElementById('note-text').value = b.dataset.note || '';
-  document.getElementById('note-for').textContent = b.dataset.noteTitle || '';
-  setTimeout(function () { var t = document.getElementById('note-text'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }, 60);
-}, true);
+(function () {
+  var f = document.getElementById('find'); if (!f) return;
+  f.addEventListener('input', function () {
+    var q = f.value.trim().toLowerCase();
+    document.querySelectorAll('details.closed-apps').forEach(function (d) { if (q) d.open = true; });
+    document.querySelectorAll('.app-card').forEach(function (c) { c.hidden = q && c.dataset.name.indexOf(q) < 0; });
+  });
+})();
 </script>
 {% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Sent' if state == 'sent' else 'Sending' }} – {{ a.company }}{% endblock %}
+{% block body %}
+<div class="sent" style="margin-top:10px">
+  {% if state == 'sent' %}
+  <div class="mark"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+  <h1>Sent to<br>{{ a.company }}.</h1>
+  <div class="sub">{{ a.title }}{% if a.applied_at %} · {{ (a.applied_at|dt('%I:%M %p')).lstrip('0') }}{% endif %}</div>
+  {% elif state == 'wait' %}
+  <div class="mark wait"><span class="spin" style="width:30px;height:30px;border-width:3px;color:#FFFFFF"></span></div>
+  <h1>Sending to<br>{{ a.company }}…</h1>
+  <div class="sub">Pressing the last button on the form. This page updates by itself.</div>
+  {% else %}
+  <div class="mark bad"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 7v6M12 17v.5"/></svg></div>
+  <h1>That one didn't<br>go through.</h1>
+  <div class="sub">Nothing is lost. See what happened and try again, or finish it yourself.</div>
+  {% endif %}
+
+  {% if state != 'bad' %}
+  <div class="what">
+    <div class="caps">What happens now</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M4 7l8 6 8-6"/></svg>
+      <div>jobhunt watches your inbox for their reply, spam folder included.</div></div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <div>A test or interview shows up on Today with a countdown.</div></div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <div>No word in {{ followup_days }} days? You'll get a follow-up note, ready to send.</div></div>
+  </div>
+  {% endif %}
+
+  <div class="next">
+    {% if state == 'bad' %}<a class="btn big light" href="/applications/{{ a.id }}">See what happened</a>
+    {% elif next_app %}<a class="btn big light" href="/applications/{{ next_app.id }}">Check the next one · {{ left }} left</a>{% endif %}
+    {% if next_app and state != 'bad' %}<a class="btn big quiet" href="/">That's enough for today</a>{% else %}<a class="btn big {{ 'quiet' if state == 'bad' else 'light' }}" href="/">Back to Today</a>{% endif %}
+  </div>
+</div>
+{% endblock %}

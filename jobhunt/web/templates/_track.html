@@ -1,0 +1,9 @@
+{# Five-step journey bar: Applied → Heard back → Test → Interview → Offer. mine = your move (orange). #}
+{% macro track(status, mine=False) -%}
+{% set stage = {'submitted': 0, 'screening': 1, 'assessment': 2, 'interview': 3, 'offer': 4}.get(status, -1) %}
+<div class="track {{ 'mine' if mine }}" role="img" aria-label="{{ ['Applied', 'Heard back', 'Test', 'Interview', 'Offer'][stage] if stage >= 0 else 'Not sent yet' }}">
+  {% for n in ['Applied', 'Heard back', 'Test', 'Interview', 'Offer'] %}
+  <div class="{{ 'done' if loop.index0 < stage else ('now' if loop.index0 == stage else '') }}"><i></i><span>{{ n }}</span></div>
+  {% endfor %}
+</div>
+{%- endmacro %}

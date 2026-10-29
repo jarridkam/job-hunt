@@ -1,95 +1,39 @@
 {% extends "base.html" %}
 {% import "_scores.html" as sc with context %}
+{% block title %}All matches – jobhunt{% endblock %}
+{% block main_class %}wide{% endblock %}
 {% block body %}
-<h1>Jobs</h1>
-{% set keep = "&sort=" ~ sort ~ ("&qtext=" ~ qtext if qtext else "") ~ ("&remote=1" if remote else "") ~ ("&days=" ~ days if days else "") %}
-<div class="tabs small">
-  <a href="/jobs?status=match{{ keep }}" class="{{ 'on' if status=='match' }}">Matches</a>
-  <a href="/jobs?status=unscored{{ keep }}" class="{{ 'on' if status=='unscored' }}">Unscored ({{ counts.get('new',0) }})</a>
-  <a href="/jobs?status=queued{{ keep }}" class="{{ 'on' if status=='queued' }}">Queued ({{ counts.get('queued',0) }})</a>
-  <a href="/jobs?status=low_fit{{ keep }}" class="{{ 'on' if status=='low_fit' }}">Low fit ({{ counts.get('low_fit',0) }})</a>
-  <a href="/jobs?status=not_legit{{ keep }}" class="{{ 'on' if status=='not_legit' }}">Not legit ({{ counts.get('not_legit',0) }})</a>
-  <a href="/jobs?status=applied{{ keep }}" class="{{ 'on' if status=='applied' }}">Applied ({{ counts.get('applied',0) }})</a>
-  <a href="/jobs?status=skipped{{ keep }}" class="{{ 'on' if status=='skipped' }}">Skipped</a>
-  <a href="/jobs?status=all{{ keep }}" class="{{ 'on' if status=='all' }}">All</a>
+<div class="pagehead">
+  <div><div class="eyebrow"><a href="/picks">Picks</a></div><h1>All matches</h1></div>
+  <form method="get" action="/jobs" class="row">
+    <input type="hidden" name="status" value="{{ status }}">
+    <input type="text" name="qtext" value="{{ qtext }}" placeholder="Find a job, company or place" aria-label="Find" style="width:260px">
+  </form>
 </div>
-<details class="legend small"><summary>How scores work</summary>
-<div class="grid" style="margin-top:8px">
-  <div class="card"><b>Fit: should you apply?</b> The AI reads your resume and the posting and judges skills, experience, projects and seniority.
-    <table>
-      <tr><td><span class="badge fit-strong"><b>85+</b><span>strong</span></span></td><td>definitely apply</td></tr>
-      <tr><td><span class="badge fit-good"><b>{{ min_fit }}+</b><span>good</span></span></td><td>worth applying; shown under Matches</td></tr>
-      <tr><td><span class="badge fit-weak"><b>50+</b><span>weak</span></span></td><td>long shot</td></tr>
-      <tr><td><span class="badge fit-poor"><b>&lt;50</b><span>poor</span></span></td><td>skip</td></tr>
-    </table>
-    {{ auto_queue }}+ is queued automatically. Roles above your seniority are capped at 45. Titles outside your target titles get 0 without using the AI.</div>
-  <div class="card"><b>Legit: is it a real job?</b> A points check, no AI. Starts at 50; a real hiring system (Greenhouse, Lever, Ashby), a detailed description, a recent date and a named employer add points; scam wording, no company, free-email contacts, spammy titles and odd salaries take them away.
-    <table>
-      <tr><td><span class="badge legit-trusted"><b>80+</b><span>trusted</span></span></td><td>looks solid</td></tr>
-      <tr><td><span class="badge legit-ok"><b>{{ min_legit }}+</b><span>ok</span></span></td><td>kept, worth a glance</td></tr>
-      <tr><td><span class="badge legit-doubtful"><b>&lt;{{ min_legit }}</b><span>doubtful</span></span></td><td>hidden under Not legit</td></tr>
-    </table>
-    Tap any score in the table to see exactly why it got that number.</div>
+<div class="tabs">
+  {% for k, l in [('match', 'Good fits'), ('queued', 'Said yes'), ('skipped', 'Said no'), ('low_fit', 'Weak fits'), ('not_legit', 'Looks off'), ('all', 'Everything')] %}
+  <a href="/jobs?status={{ k }}{{ '&qtext=' ~ qtext if qtext }}" class="{{ 'on' if status == k }}">{{ l }}{% if k not in ('match', 'all') and counts.get(k) %} <span class="muted">{{ counts.get(k) }}</span>{% endif %}</a>
+  {% endfor %}
 </div>
-</details>
-<div class="row" style="margin:10px 0; gap:14px; align-items:center">
-<form method="get" action="/jobs" class="row inline filterbar" id="job-filter">
-  <input type="hidden" name="status" value="{{ status }}">
-  <input type="text" name="qtext" value="{{ qtext }}" placeholder="search title, company, place" style="width:220px">
-  <label class="small">Sort <select name="sort">{% for k, v in sorts.items() %}<option value="{{ k }}" {{ 'selected' if k == sort }}>{{ v[0] }}</option>{% endfor %}</select></label>
-  <label class="small">Posted <select name="days"><option value="0">any time</option>{% for d, l in [(1,'last day'),(3,'3 days'),(7,'week'),(14,'2 weeks'),(30,'month')] %}<option value="{{ d }}" {{ 'selected' if d == days }}>{{ l }}</option>{% endfor %}</select></label>
-  <input type="number" name="min_fit" value="{{ min_fit or '' }}" placeholder="min fit" style="width:84px" min="0" max="100">
-  <input type="number" name="min_legit" value="{{ min_legit or '' }}" placeholder="min legit" style="width:92px" min="0" max="100">
-  <label class="small"><input type="checkbox" name="remote" value="1" {{ 'checked' if remote }}> remote</label>
-  <button class="small">Apply</button>
-  {% if qtext or min_fit or min_legit or remote or days or sort != 'fit' %}<a class="small" href="/jobs?status={{ status }}">clear</a>{% endif %}
-</form>
-{% if unscored %}<form method="post" action="/run/score" class="inline"><button class="small">Score unscored ({{ unscored }})</button></form>{% endif %}
-<form method="post" action="/run/fetch_and_score" class="inline"><button class="small">Fetch new &amp; score</button></form>
-</div>
-{% if not jobs %}
-<div class="card" style="margin:10px 0">
-  {% if scored == 0 and unscored %}
-    <b>Nothing has been scored yet.</b> {{ unscored }} fetched jobs are waiting. Fit scores only appear after a scoring run (one LLM call per job that passes your title and exclude filters).
-    <form method="post" action="/run/score" class="inline" style="margin-left:8px"><button class="primary small">Score now</button></form>
-  {% elif status == 'match' %}
-    No job scored {{ min_fit_setting }} or higher{% if qtext %} matching "{{ qtext }}"{% endif %}. Check <a href="/jobs?status=low_fit">Low fit</a>, lower <i>Min fit score</i> in Settings, or widen target titles.
-  {% elif status == 'unscored' %}
-    Everything is scored.
-  {% else %}
-    No jobs here{% if qtext or min_fit %} with this filter{% endif %}.
-  {% endif %}
-</div>
-{% endif %}
-
-<form method="post" action="/jobs/bulk" id="bulk">
-<div class="row" style="margin-bottom:6px">
-  <button name="action" value="queue" class="primary small">Queue selected &amp; draft letters</button>
-  <button name="action" value="skip" class="small">Skip selected</button>
-  <label class="small" style="margin:0"><input type="checkbox" onclick="document.querySelectorAll('#bulk details[open] input[name=ids]').forEach(c=>c.checked=this.checked)"> all</label>
-</div>
-{% for sec in jobs|month_sections('posted_at', 'fetched_at') %}
-<details class="month" {{ 'open' if sec.open }}><summary>{{ sec.label }} <span class="muted">· {{ sec.count }} posted</span></summary>
-{% for m in sec.months %}
-{% if sec.months|length > 1 or not sec.open %}<h3>{{ m.label }} <span class="muted small">· {{ m.rows|length }}</span></h3>{% endif %}
-<table>
-<tr><th></th><th>Fit</th><th>Legit</th><th>Job</th><th>Company</th><th>Location</th><th>Posted</th><th>Src</th><th></th></tr>
-{% for j in m.rows %}
+{% if unscored %}<div class="flash row" style="justify-content:space-between">{{ unscored }} new jobs haven't been scored yet. <form method="post" action="/run/score" class="inline"><button class="small">Score them</button></form></div>{% endif %}
+{% if jobs %}
+<div class="card">
+<table class="stack">
+<tr><th>Fit</th><th>Job</th><th>Company</th><th>Posted</th><th></th></tr>
+{% for j in jobs %}
 <tr>
-  <td><input type="checkbox" name="ids" value="{{ j.id }}"></td>
   <td>{{ sc.fit(j, j.id) }}</td>
-  <td>{{ sc.legit(j, j.id) }}</td>
-  <td><a href="/jobs/{{ j.id }}">{{ j.title }}</a>{% if j.fit_summary %}<div class="small muted">{{ j.fit_summary[:140] }}</div>{% endif %}</td>
-  <td>{{ j.company }}</td>
-  <td class="small">{{ j.location }}{% if j.remote %} <span class="pill">remote</span>{% endif %}</td>
-  <td class="small muted">{{ j.posted_at|dt('%b %d') }}</td>
-  <td class="small muted">{{ j.ats or j.source }}</td>
-  <td class="small">{{ job_pill(j.status) }}</td>
+  <td class="job"><a href="/jobs/{{ j.id }}">{{ j.title }}</a>{% if j.fit_summary %}<div class="small muted">{{ j.fit_summary[:140] }}</div>{% endif %}</td>
+  <td data-label="Company">{{ j.company }}<div class="small muted">{{ j.location }}{% if j.remote %} · remote{% endif %}</div></td>
+  <td data-label="Posted" class="small muted">{{ j.posted_at|dt('%b %d') }}</td>
+  <td class="acts">{% if j.status == 'new' %}<form method="post" action="/jobs/{{ j.id }}/queue" class="inline"><input type="hidden" name="draft" value="1"><button class="small">Apply for me</button></form>{% else %}{{ job_pill(j.status) }}{% endif %}</td>
 </tr>
 {% endfor %}
 </table>
-{% endfor %}
-</details>
-{% else %}<p class="muted">Nothing here.</p>{% endfor %}
-</form>
+</div>
+{% else %}
+<div class="card empty"><b>Nothing here{% if qtext %} for "{{ qtext }}"{% endif %}.</b>
+  {% if status == 'match' %}No job has scored {{ min_fit_setting }} or more yet.{% endif %}
+  <form method="post" action="/run/fetch_and_score" style="margin-top:14px"><button class="primary">Find new jobs</button></form></div>
+{% endif %}
 {% endblock %}

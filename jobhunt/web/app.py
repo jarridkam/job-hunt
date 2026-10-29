@@ -356,6 +356,8 @@ def due_items() -> list[dict]:
                     "via": via, "detail": (f"About {x['est_minutes']} min. " if x.get("est_minutes") else "") + ("Not opened yet." if not x.get("opened_at") else ""),
                     "flags": flags, "spam": bits["spam"],
                     "big": big, "sub": sub_, "tone": tone, "sort": target or (now + timedelta(days=365)),
+                    "at": target, "real_at": at, "since": _aware(x.get("received_at") or x.get("created_at")), "test": True,
+                    "details": "/upcoming#assessments",
                     "href": f"/assessments/{x['id']}/open" if x.get("link") else "/upcoming#assessments", "open_new": bool(x.get("link")),
                     "action": "Open test" if x.get("link") else "Details",
                     "done_url": f"/assessments/{x['id']}/status", "done_value": "completed", "done_label": "Done"})
@@ -374,6 +376,7 @@ def due_items() -> list[dict]:
                     "via": (f"Email from {dom}. " if dom else "") + (f"With {x['interviewer']}. " if x.get("interviewer") else "") + (x.get("location") or ""),
                     "detail": (x.get("title") or "") + (f" · ~{x['duration_minutes']} min" if x.get("duration_minutes") else ""),
                     "big": big, "sub": sub_, "tone": tone, "sort": at or now,
+                    "at": at, "real_at": at, "since": None, "test": False, "details": "/upcoming#interviews",
                     "href": x.get("link") or "/upcoming#interviews", "open_new": bool(x.get("link")),
                     "action": ("Schedule" if at is None else "Join") if x.get("link") else "Details",
                     "done_url": f"/interviews/{x['id']}/status", "done_value": "done", "done_label": "Done"})
@@ -381,33 +384,113 @@ def due_items() -> list[dict]:
     return out
 
 
-def _due_action(d: dict, tone: str) -> dict:
-    return {"why": d["kind"].split(" · ")[0], "title": f"{d['company']} — {d['what']}".strip(" —"),
-            "when": f"{d['big']} · {d['sub']}".strip(" ·"), "href": d["href"], "open_new": d["open_new"],
-            "label": d["action"], "tone": tone}
+def _clock_text(dt: datetime) -> str:
+    loc = dt.astimezone()
+    return loc.strftime("%a %b %d, ") + loc.strftime("%I:%M %p").lstrip("0")
 
 
-def next_action(due: list[dict], needs: list[dict], setup_min: int, match_count: int) -> dict:
-    """The one thing to do next, so Today has a single primary button above the fold.
-    Order: a test or interview that is close, then anything urgent waiting on you, then setup, then matches."""
+def _hero_from_due(d: dict, now: datetime) -> dict:
+    """A test or interview as the big card on Today: one number, one sentence, one button."""
+    at, test = d.get("at"), d.get("test")
+    h = {"kind": ("Test" if test else "Interview") + (f" · {d['via'].split('.')[0][3:]}" if test and d.get("via", "").startswith("On ") else ""),
+         "who": d["company"], "what": d["what"], "minutes": "", "word": False, "bar": None,
+         "label": d["action"], "href": d["href"], "open_new": d["open_new"], "urgent": True,
+         "done_url": d.get("done_url"), "done_value": d.get("done_value"), "details": d.get("details"),
+         "prep": d.get("prep"), "prep_ready": d.get("prep_ready"), "flag": (d.get("flags") or [""])[0]}
+    if "About " in (d.get("detail") or ""):
+        h["minutes"] = d["detail"].split(".")[0].replace("About ", "about ")
+    if at is None:
+        h.update({"big": "No deadline" if test else "Pick a time", "unit": "", "word": True, "note": d.get("sub", "")})
+        return h
+    secs = (at - now).total_seconds()
+    if secs < 0:
+        h.update({"big": "Overdue" if test else "Happened", "unit": "", "word": True,
+                  "note": ("It was due " if test else "It was ") + _clock_text(at) + "."})
+    elif secs < 3600:
+        h.update({"big": str(max(1, int(secs // 60))), "unit": "minutes left" if test else "minutes until it starts"})
+    elif secs < 48 * 3600:
+        n = int(-(-secs // 3600))
+        h.update({"big": str(n), "unit": ("hour" if n == 1 else "hours") + (" left" if test else " to go")})
+    else:
+        n = int(secs // 86400)
+        h.update({"big": str(n), "unit": "days left" if test else "days to go", "urgent": secs < 72 * 3600})
+    if secs >= 0:
+        if test:
+            real = d.get("real_at")
+            h["note"] = "Do it by " + _clock_text(at) + "." + (
+                f" The real deadline is {_clock_text(real)}." if real and real != at else "")
+        else:
+            h["note"] = _clock_text(at) + "." + (f" {d['via'].strip()}" if d.get("via") else "")
+    since = d.get("since")
+    if test and since and at and at > since:
+        h["bar"] = max(4, min(100, int(100 * (now - since).total_seconds() / (at - since).total_seconds())))
+    return h
+
+
+def today_plan(due: list[dict], needs: list[dict], setup_min: int, match_count: int, setup_urgent: bool = True) -> tuple[dict, list[dict]]:
+    """Today = one hero card (the next thing) + a short list of what comes after.
+    Order: a close test or interview, then anything urgent waiting on you, then any other dated thing,
+    then setup, then today's picks, then all clear."""
+    now = datetime.now(timezone.utc)
+    hero, used = None, None
     for d in due:
         if d["big"] != "Happened" and (d["tone"] in ("urgent", "bad") or d["big"] in ("No deadline", "Pick a time")):
-            return _due_action(d, "urgent")
-    for i in needs:
-        if i.get("urgent"):
-            return {"why": i["kind"], "title": i["title"], "when": i.get("detail", ""), "href": i["href"],
-                    "post": i.get("post"), "label": i["action"], "tone": "urgent"}
+            hero, used = _hero_from_due(d, now), d
+            break
+    if hero is None:
+        for i in needs:
+            if i.get("urgent"):
+                hero = {"kind": i["kind"], "who": "", "what": i["title"], "big": "", "note": i.get("detail", ""),
+                        "label": i["action"], "href": i["href"], "post": i.get("post"), "urgent": True, "open_new": i["href"].startswith("http")}
+                used = i
+                break
+    if hero is None and due and due[0]["big"] != "Happened":
+        hero, used = _hero_from_due(due[0], now), due[0]
+    if hero is None and setup_min and setup_urgent:
+        hero = {"kind": "Setup", "who": "", "what": "Finish setting up so nothing slips", "big": "",
+                "note": f"About {setup_min} minutes left. Every step saves as you go.", "label": "Pick up setup", "href": "/setup", "calm": True}
+        used = "setup"
+    if hero is None and match_count:
+        hero = {"kind": "Today's picks", "who": "", "what": f"{min(match_count, PICKS_PER_DAY)} jobs picked for you", "big": "",
+                "note": "Say yes or no to each one. jobhunt writes and fills the ones you say yes to.", "label": "See them", "href": "/picks", "calm": True}
+        used = "picks"
+    if hero is None:
+        hero = {"kind": "All clear", "who": "", "what": "Nothing needs you right now.", "big": "", "calm": True,
+                "note": "Tests and interviews from your inbox show up here with a countdown.",
+                "label": "Find new jobs", "post": "/run/fetch_and_score", "href": "/picks"}
+        used = "clear"
+
+    rows: list[dict] = []
     for d in due:
-        if d["tone"] == "soon":
-            return _due_action(d, "soon")
-    if setup_min:
-        return {"why": "Setup", "title": "Finish setting up so nothing slips", "when": f"about {setup_min} min left",
-                "href": "/setup", "label": f"Pick up setup · ~{setup_min} min", "tone": "later"}
-    if match_count:
-        return {"why": "New matches", "title": f"{match_count} jobs worth a look", "when": "scored against your resume",
-                "href": "/jobs?status=match", "label": "Look at matches", "tone": "later"}
-    return {"why": "All caught up", "title": "Nothing urgent", "when": "find new jobs when you're ready",
-            "post": "/run/fetch_and_score", "href": "/jobs", "label": "Find & score jobs", "tone": "later"}
+        if d is used:
+            continue
+        at = d.get("at")
+        loc = at.astimezone() if at else None
+        rows.append({"tile": "date" if loc else "warm", "d": loc.strftime("%a") if loc else "", "n": loc.day if loc else "",
+                     "icon": "" if loc else "clock", "t": f"{d['company']} · {d['what']}".strip(" ·"),
+                     "s": f"{d['big']} · {d['sub']}".strip(" ·") if d["big"] not in ("Today", "Tomorrow") or not d["sub"] else f"{d['big']}, {d['sub']}",
+                     "href": d.get("details") or "/upcoming"})
+    for i in needs:
+        if i is used:
+            continue
+        rows.append({"tile": "bad" if i.get("problem") else "warm", "icon": "alert" if i.get("problem") else "dot",
+                     "t": i["title"], "s": i.get("detail", ""), "href": i["href"], "post": i.get("post"), "action": i["action"],
+                     "dismiss": i.get("dismiss")})
+    for t in mail.threads():
+        if not t["awaiting_you"]:
+            break
+        who = (t["last"].get("who") or "them").split(" ")[0].split("@")[0]
+        rows.append({"tile": "warm", "icon": "reply", "t": f"Reply to {who} at {t['company']}",
+                     "s": (t["last"].get("subject") or "They wrote to you") + " · " + _rel(t["last_at"]), "href": f"/messages/{t['id']}"})
+    if used != "setup" and setup_min:
+        rows.append({"tile": "", "icon": "gear", "t": "Finish setup", "s": f"About {setup_min} min left", "href": "/setup"})
+    if used != "picks" and match_count:
+        rows.append({"tile": "date", "icon": "picks", "t": f"{min(match_count, PICKS_PER_DAY)} new jobs picked for you",
+                     "s": "Say yes or no to each", "href": "/picks", "go": "See them"})
+    return hero, rows
+
+
+PICKS_PER_DAY = 5
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -415,25 +498,17 @@ def today(request: Request):
     if setup_needed():
         return RedirectResponse("/setup", status_code=302)
     email_tracker.mark_missed()
-    ready = {"resume": bool(documents.active_resume()), "key": bool(config.get("anthropic_api_key")),
-             "titles": bool(config.get_lines("search_titles")), "name": bool(config.get("cand_first_name") and config.get("cand_email")),
-             "email": bool(config.get("email_user") and config.get("email_pass"))}
-    ready["all"] = all(ready.values())
     items = needs_you_items()
     needs = [i for i in items if not i["kind"].startswith(("Assessment", "Interview", "Pick an interview"))]
-    top = db.q("SELECT * FROM jobs WHERE status='new' AND fit_score >= ? ORDER BY fit_score DESC LIMIT 5",
-               (config.get_int("min_fit_score", 65),))
-    match_count = (db.q1("SELECT COUNT(*) n FROM jobs WHERE status IN ('new','queued') AND fit_score >= ?",
+    match_count = (db.q1("SELECT COUNT(*) n FROM jobs WHERE status='new' AND fit_score >= ?",
                          (config.get_int("min_fit_score", 65),)) or {}).get("n", 0)
-    app_counts = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) n FROM applications GROUP BY status")}
-    applied_n = sum(app_counts.get(s, 0) for s in ("submitted", "screening", "assessment", "interview", "offer"))
-    queue_n = sum(app_counts.get(s, 0) for s in ("queued", "drafting", "ready", "review", "needs_attention"))
-    setup_n, setup_min = setup_left()
-    due = due_items()
-    return render(request, "today.html", ready=ready, setup_n=setup_n, setup_min=setup_min, due=due,
-                  nxt=next_action(due, needs, setup_min, match_count), needs=needs, needs_total=len(items), top=top, stamps=health.stamps(),
-                  match_count=match_count, applied_n=applied_n, queue_n=queue_n, running=tasks.running(),
-                  last_run=db.q1("SELECT * FROM runs ORDER BY id DESC LIMIT 1"))
+    _n, setup_min = setup_left()
+    st = setup_state()
+    urgent = not (st["key"] and st["email"] and st["resume"] and st["titles"])   # the parts nothing works without
+    hero, rows = today_plan(due_items(), needs, setup_min, match_count, setup_urgent=urgent)
+    now = datetime.now().astimezone()
+    return render(request, "today.html", hero=hero, rows=rows, needs_total=len(items),
+                  date_line=now.strftime("%A, %B ") + str(now.day))
 
 
 # ---- setup wizard -----------------------------------------------------------
@@ -601,25 +676,6 @@ def setup_dismiss():
     return back("/", "Okay. Setup stays under Settings if you need it.")
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request):
-    counts = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}
-    app_counts = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) n FROM applications GROUP BY status")}
-    upcoming = db.q("SELECT a.*, p.title AS app_title FROM assessments a LEFT JOIN applications p ON p.id=a.application_id "
-                    "WHERE a.status='pending' ORDER BY COALESCE(a.due_at,'9999') LIMIT 8")
-    interviews = db.q("SELECT * FROM interviews WHERE status IN ('needs_scheduling','scheduled') ORDER BY COALESCE(starts_at,'0') LIMIT 8")
-    top = db.q("SELECT * FROM jobs WHERE status IN ('new','queued') AND fit_score IS NOT NULL ORDER BY fit_score DESC LIMIT 10")
-    match_count = (db.q1("SELECT COUNT(*) n FROM jobs WHERE status IN ('new','queued') AND fit_score >= ?",
-                         (config.get_int("min_fit_score", 65),)) or {}).get("n", 0)
-    runs = db.q("SELECT * FROM runs ORDER BY id DESC LIMIT 6")
-    attention = db.q("SELECT * FROM applications WHERE status='needs_attention' ORDER BY last_update_at DESC LIMIT 8")
-    ready = {"resume": bool(documents.active_resume()), "key": bool(config.get("anthropic_api_key")),
-             "titles": bool(config.get_lines("search_titles")), "name": bool(config.get("cand_first_name") and config.get("cand_email")),
-             "email": bool(config.get("email_user") and config.get("email_pass"))}
-    return render(request, "dashboard.html", interviews=interviews, counts=counts, app_counts=app_counts, upcoming=upcoming, top=top,
-                  runs=runs, attention=attention, ready=ready, match_count=match_count, spend=llm.spend_summary())
-
-
 @app.post("/credits")
 def credits_set(request: Request, balance: str = Form("")):
     """User types the balance the Anthropic console shows (purchased + promotional); we count spend from now."""
@@ -772,42 +828,23 @@ def api_status():
 
 # ---- jobs ------------------------------------------------------------------
 
-JOB_SORTS = {"fit": ("Best fit", "COALESCE(fit_score,-1) DESC, legit_score DESC, id DESC"),
-             "posted": ("Newest posted", "COALESCE(posted_at, fetched_at) DESC, id DESC"),
-             "found": ("Newest found", "fetched_at DESC, id DESC"),
-             "legit": ("Most legit", "COALESCE(legit_score,-1) DESC, COALESCE(fit_score,-1) DESC"),
-             "company": ("Company A-Z", "lower(company), lower(title)")}
-
-
 @app.get("/jobs", response_class=HTMLResponse)
-def jobs(request: Request, status: str = "match", min_fit: int = 0, qtext: str = "", sort: str = "fit", min_legit: int = 0,
-         remote: int = 0, days: int = 0):
+def jobs(request: Request, status: str = "match", qtext: str = ""):
+    """Every job jobhunt found, best fit first. Picks is the everyday way in; this is for looking further."""
     where, params = [], []
     if status == "match":
         where.append("status IN ('new','queued') AND fit_score >= ?"); params.append(config.get_int("min_fit_score", 65))
-    elif status == "unscored":
-        where.append("status='new' AND fit_score IS NULL")
     elif status != "all":
         where.append("status=?"); params.append(status)
-    if min_fit:
-        where.append("fit_score >= ?"); params.append(min_fit)
     if qtext:
         where.append("(lower(title) LIKE ? OR lower(company) LIKE ? OR lower(location) LIKE ?)"); params += [f"%{qtext.lower()}%"] * 3
-    if min_legit:
-        where.append("legit_score >= ?"); params.append(min_legit)
-    if remote:
-        where.append("remote=1")
-    if days:
-        where.append("COALESCE(posted_at, fetched_at) >= ?"); params.append((datetime.now(timezone.utc) - timedelta(days=days)).isoformat()[:10])
-    sort = sort if sort in JOB_SORTS else "fit"
-    sql = "SELECT * FROM jobs" + (" WHERE " + " AND ".join(where) if where else "") + f" ORDER BY {JOB_SORTS[sort][1]} LIMIT 300"
+    sql = "SELECT * FROM jobs" + (" WHERE " + " AND ".join(where) if where else "") + \
+          " ORDER BY COALESCE(fit_score,-1) DESC, legit_score DESC, id DESC LIMIT 200"
     rows = db.q(sql, tuple(params))
     counts = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}
-    scored = (db.q1("SELECT COUNT(*) n FROM jobs WHERE fit_score IS NOT NULL") or {}).get("n", 0)
     unscored = (db.q1("SELECT COUNT(*) n FROM jobs WHERE status='new' AND fit_score IS NULL") or {}).get("n", 0)
-    return render(request, "jobs.html", jobs=rows, status=status, min_fit=min_fit, qtext=qtext, counts=counts, sort=sort, sorts=JOB_SORTS,
-                  min_legit=min_legit, remote=remote, days=days,
-                  scored=scored, unscored=unscored, min_fit_setting=config.get_int("min_fit_score", 65))
+    return render(request, "jobs.html", jobs=rows, status=status, qtext=qtext, counts=counts, unscored=unscored,
+                  min_fit_setting=config.get_int("min_fit_score", 65))
 
 
 @app.get("/jobs/{job_id}", response_class=HTMLResponse)
@@ -820,10 +857,12 @@ def job_detail(request: Request, job_id: int):
 
 
 @app.post("/jobs/{job_id}/queue")
-def job_queue(job_id: int, draft: int = Form(0)):
+def job_queue(job_id: int, draft: int = Form(0), next: str = Form("")):
     app_id = queue.enqueue(job_id)
     if draft:
         tasks.start(f"draft-{app_id}", tasks.draft_task(app_id))
+        if next.startswith("/picks"):
+            return back(next, "Yes. Writing your letter now.")
         return back(f"/applications/{app_id}", "Added to your queue. Writing the letter now.")
     return back(f"/applications/{app_id}", "Added to your queue")
 
@@ -831,7 +870,52 @@ def job_queue(job_id: int, draft: int = Form(0)):
 @app.post("/jobs/{job_id}/skip")
 def job_skip(job_id: int, next: str = Form("/jobs")):
     queue.skip_job(job_id)
-    return back(next, "Skipped")
+    if not next.startswith("/") or next.startswith("//"):
+        next = "/jobs"
+    return back(next, "Skipped. It won't come back." if next.startswith("/picks") else "Skipped")
+
+
+# ---- picks: today's few jobs, one at a time -----------------------------------------------
+
+def _start_of_today_utc() -> str:
+    loc = datetime.now().astimezone()
+    return loc.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
+
+
+def _pick_card(j: dict) -> dict:
+    reasons = [r for r in (db.loads(j.get("fit_reasons"), []) or []) if r][:3]
+    missing = [m for m in (db.loads(j.get("fit_missing"), []) or []) if m]
+    chips = ["Remote" if j.get("remote") else ""]
+    if j.get("salary_min"):
+        lo, hi = int(j["salary_min"] // 1000), int((j.get("salary_max") or 0) // 1000)
+        chips.append(f"${lo}k" + (f"–{hi}k" if hi and hi != lo else "+"))
+    if j.get("posted_at"):
+        chips.append("Posted " + _rel(j["posted_at"]))
+    return {"id": j["id"], "company": j.get("company") or "Company not listed", "role": j["title"],
+            "about": j.get("location") or ("Remote" if j.get("remote") else ""), "chips": [c for c in chips if c],
+            "fit": j.get("fit_score"), "why": reasons or ([j["fit_summary"]] if j.get("fit_summary") else []),
+            "watch": missing[0] if missing else "", "tint": f"m{j['id'] % 6}", "initial": (j.get("company") or "?")[:1].upper()}
+
+
+@app.get("/picks", response_class=HTMLResponse)
+def picks(request: Request, more: int = 0):
+    """A few good jobs a day, one at a time, yes or no. Saying yes queues it and starts the letter."""
+    more = max(0, min(more, 20))
+    min_fit = config.get_int("min_fit_score", 65)
+    decided = db.q("SELECT status FROM jobs WHERE decided_at >= ?", (_start_of_today_utc(),))
+    yes = sum(1 for d in decided if d["status"] in ("queued", "applied"))
+    pool = db.q("SELECT * FROM jobs WHERE status='new' AND fit_score >= ? ORDER BY fit_score DESC, id DESC LIMIT 60", (min_fit,))
+    goal = PICKS_PER_DAY * (1 + more)
+    done_n = len(decided)
+    left_today = max(0, min(goal - done_n, len(pool)))
+    total = done_n + left_today
+    card = _pick_card(pool[0]) if left_today and pool else None
+    next_url = "/picks" + (f"?more={more}" if more else "")
+    first_ready = db.q1("SELECT id FROM applications WHERE status IN ('review','ready') ORDER BY CASE status WHEN 'review' THEN 0 ELSE 1 END, last_update_at DESC LIMIT 1")
+    return render(request, "picks.html", card=card, done_n=done_n, total=total, yes=yes, no=done_n - yes,
+                  extra=len(pool) - left_today, more=more, next_url=next_url, first_ready=first_ready,
+                  finding=tasks.is_running("fetch_and_score") or tasks.is_running("fetch") or tasks.is_running("score"),
+                  can_find=bool(config.get("anthropic_api_key") and config.get_lines("search_titles")))
 
 
 @app.post("/jobs/{job_id}/rescore")
@@ -844,20 +928,6 @@ def job_rescore(job_id: int):
     db.update("jobs", job_id, {"fit_score": fs.fit_score, "fit_summary": fs.summary, "fit_reasons": db.dumps(fs.matching_points),
                                "fit_missing": db.dumps(fs.missing), "status": "new" if job["status"] in ("low_fit",) else job["status"]})
     return back(f"/jobs/{job_id}", f"scored {fs.fit_score}")
-
-
-@app.post("/jobs/bulk")
-def jobs_bulk(action: str = Form(...), ids: list[int] = Form([])):
-    n = 0
-    for jid in ids:
-        if action == "queue":
-            queue.enqueue(jid); n += 1
-        elif action == "skip":
-            queue.skip_job(jid); n += 1
-    if action == "queue" and n:
-        tasks.start("draft_all", tasks.draft_all_task)
-        return back("/queue", f"Added {n} to your queue. Writing their letters now.")
-    return back("/jobs", f"Skipped {n} job{'s' if n != 1 else ''}" if action == "skip" else "Nothing selected")
 
 
 # ---- queue / applications ----------------------------------------------------
@@ -877,46 +947,56 @@ def queue_remove(ids: list[int] = Form([])):
     return back("/queue", f"Removed {n} from your queue" if n else "Nothing selected")
 
 
-APP_SORTS = {"updated": ("Latest activity", "a.last_update_at DESC"),
-             "applied": ("Applied date", "COALESCE(a.applied_at, a.created_at) DESC"),
-             "deadline": ("Next deadline", "CASE WHEN next_at IS NULL THEN 1 ELSE 0 END, next_at"),
-             "fit": ("Best fit", "COALESCE(j.fit_score,-1) DESC"),
-             "posted": ("Posted date", "COALESCE(j.posted_at,'') DESC"),
-             "company": ("Company A-Z", "lower(a.company), lower(a.title)")}
+def applied_groups() -> dict[str, list[dict]]:
+    """Every application, sorted into whose move it is. Each card says the one thing that matters about it."""
+    now = datetime.now(timezone.utc)
+    apps = db.q("SELECT id, company, title, status, applied_at, created_at, last_update_at FROM applications ORDER BY last_update_at DESC")
+    tests: dict[int, dict] = {}
+    for x in db.q("SELECT application_id, due_at FROM assessments WHERE status='pending' AND application_id IS NOT NULL ORDER BY COALESCE(due_at,'9')"):
+        tests.setdefault(x["application_id"], x)
+    ivs: dict[int, dict] = {}
+    for x in db.q("SELECT application_id, starts_at, status FROM interviews WHERE status IN ('scheduled','needs_scheduling') "
+                  "AND application_id IS NOT NULL ORDER BY COALESCE(starts_at,'0')"):
+        ivs.setdefault(x["application_id"], x)
+    owed = {t["id"] for t in mail.threads() if t["awaiting_you"]}
+    quiet = {q["id"]: q.get("quiet_days") for q in followup.stale(limit=500)}
+    out: dict[str, list[dict]] = {"mine": [], "busy": [], "theirs": [], "closed": []}
+    for a in apps:
+        st, aid = a["status"], a["id"]
+        c = {"id": aid, "company": a.get("company") or "Unknown company", "title": a.get("title") or "", "status": st,
+             "tint": f"m{aid % 6}", "initial": (a.get("company") or "?")[:1].upper(), "tag": "", "kind": ""}
+        t, iv = tests.get(aid), ivs.get(aid)
+        if st in ("review", "ready", "needs_attention", "failed"):
+            c.update(tag={"review": "Check & send", "ready": "Read your letter", "needs_attention": "Got stuck",
+                          "failed": "Didn't go through"}[st], kind="mine", group="mine")
+        elif t:
+            due = _aware(t.get("due_at"))
+            c.update(tag="Test · " + ("no deadline" if not due else ("overdue" if due < now else _rel(due.isoformat()))), kind="mine", group="mine")
+        elif iv and iv["status"] == "needs_scheduling":
+            c.update(tag="Pick a time", kind="mine", group="mine")
+        elif aid in owed:
+            c.update(tag="Reply", kind="mine", group="mine")
+        elif st in ("queued", "drafting", "applying"):
+            c.update(tag="Filling the form" if st == "applying" else "Writing letter", kind="busy", group="busy")
+        elif st in ("rejected", "withdrawn"):
+            c.update(tag=messages.app_status(st)[0], group="closed")
+        else:
+            at = _aware(iv.get("starts_at")) if iv else None
+            if at:
+                c["tag"] = "Interview " + at.astimezone().strftime("%a")
+            elif aid in quiet:
+                c["tag"] = f"Quiet {quiet[aid]} days" if quiet[aid] else "Gone quiet"
+            else:
+                c["tag"] = "Sent " + _rel(a.get("applied_at") or a.get("created_at"))
+            c["group"] = "theirs"
+        out[c["group"]].append(c)
+    return out
 
 
 @app.get("/applications", response_class=HTMLResponse)
-def applications(request: Request, status: str = "applied", sort: str = "updated", qtext: str = ""):
-    # next_at: the next open test deadline or interview; that is what "deadline" sorts by.
-    sql = ("SELECT a.*, j.url, j.fit_score, j.fit_summary, j.fit_reasons, j.fit_missing, j.posted_at, "
-           "(SELECT MIN(x) FROM (SELECT due_at x FROM assessments WHERE application_id=a.id AND status='pending' AND due_at IS NOT NULL "
-           " UNION ALL SELECT starts_at FROM interviews WHERE application_id=a.id AND status='scheduled' AND starts_at IS NOT NULL)) AS next_at "
-           "FROM applications a LEFT JOIN jobs j ON j.id=a.job_id ")
-    params: tuple = ()
-    if status == "applied":
-        sql += "WHERE a.status IN ('submitted','screening','assessment','interview','offer','rejected') "
-    elif status == "active":
-        sql += "WHERE a.status IN ('submitted','screening','assessment','interview','offer') "
-    elif status == "quiet":
-        ids = [a["id"] for a in followup.stale(limit=500)] or [0]
-        sql += f"WHERE a.id IN ({','.join('?' * len(ids))}) "; params = tuple(ids)
-    elif status != "all":
-        sql += "WHERE a.status=? "; params = (status,)
-    else:
-        sql += "WHERE 1=1 "
-    if qtext:
-        sql += "AND (lower(a.company) LIKE ? OR lower(a.title) LIKE ? OR lower(COALESCE(a.notes,'')) LIKE ?) "
-        params = tuple(params) + (f"%{qtext.lower()}%",) * 3
-    sort = sort if sort in APP_SORTS else "updated"
-    sql += "ORDER BY " + APP_SORTS[sort][1]
-    rows = db.q(sql, params)
-    if status == "quiet" and sort == "updated":
-        order = {a["id"]: i for i, a in enumerate(followup.stale(limit=500))}
-        rows.sort(key=lambda r: order.get(r["id"], 999))
-    counts = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) n FROM applications GROUP BY status")}
-    applied_n = sum(counts.get(s, 0) for s in ("submitted", "screening", "assessment", "interview", "offer", "rejected"))
-    return render(request, "applications.html", apps=rows, status=status, counts=counts, applied_n=applied_n, sort=sort, sorts=APP_SORTS, qtext=qtext,
-                  quiet_n=len(followup.stale(limit=500)))
+def applications(request: Request):
+    g = applied_groups()
+    return render(request, "applications.html", groups=g, live=len(g["mine"]) + len(g["busy"]) + len(g["theirs"]))
 
 
 @app.post("/applications/new")
@@ -991,8 +1071,23 @@ async def application_review(request: Request, app_id: int):
         remember = {k[9:] for k, v in form.items() if k.startswith("remember_") and v}
         n = remember_answers(db.loads(db.q1("SELECT review_json FROM applications WHERE id=?", (app_id,))["review_json"], []), edits, remember)
     db.update("applications", app_id, {"review_decision": db.dumps({"action": action, "edits": edits})})
-    return back(f"/applications/{app_id}", ("Sending it now…" + (f" Remembered {n} answer{'s' if n != 1 else ''} for next time." if n else ""))
-                if action == "approve" else "Cancelled. Nothing was sent.")
+    if action == "approve":
+        return back(f"/applications/{app_id}/sent", f"Remembered {n} answer{'s' if n != 1 else ''} for next time." if n else "")
+    return back(f"/applications/{app_id}", "Cancelled. Nothing was sent.")
+
+
+@app.get("/applications/{app_id}/sent", response_class=HTMLResponse)
+def application_sent(request: Request, app_id: int):
+    """The moment after Send: say it plainly, say what happens next, offer the next one or a break."""
+    a = db.q1("SELECT id, company, title, status, applied_at FROM applications WHERE id=?", (app_id,))
+    if not a:
+        return back("/applications", "not found")
+    state = "sent" if a["status"] not in ("review", "applying", "needs_attention", "failed") else \
+            ("bad" if a["status"] in ("needs_attention", "failed") else "wait")
+    waiting = db.q("SELECT id FROM applications WHERE status IN ('review','ready') AND id != ? "
+                   "ORDER BY CASE status WHEN 'review' THEN 0 ELSE 1 END, last_update_at DESC", (app_id,))
+    return render(request, "sent.html", a=a, state=state, next_app=waiting[0] if waiting else None, left=len(waiting),
+                  followup_days=followup.days_setting())
 
 
 @app.post("/applications/{app_id}/draft")
@@ -1568,10 +1663,7 @@ def company_delete(cid: int):
 def settings(request: Request):
     vals = {k: config.get(k) for k, *_ in config.SETTING_SPECS}
     subs = notify.subscriptions()
-    own = messages.label_overrides()
-    labels = [(code, info[0], own.get(code, "")) for code, info in messages.APP_STATUS.items()] + \
-             [("job:" + code, info[0], own.get("job:" + code, "")) for code, info in messages.JOB_STATUS.items()]
-    return render(request, "settings.html", specs=config.SETTING_SPECS, vals=vals, options=config.SELECT_OPTIONS, labels=labels,
+    return render(request, "settings.html", specs=config.SETTING_SPECS, vals=vals, options=config.SELECT_OPTIONS,
                   push_subs=subs, push_n=len(subs))
 
 
@@ -1587,14 +1679,6 @@ async def settings_save(request: Request):
                 continue  # keep existing secret when left blank
             db.set_setting(key, v)
     return back("/settings", "saved")
-
-
-@app.post("/settings/labels")
-async def settings_labels(request: Request):
-    form = await request.form()
-    own = {k[2:]: str(v).strip()[:40] for k, v in form.items() if k.startswith("l_") and str(v).strip()}
-    db.set_setting("status_labels", db.dumps(own))
-    return back("/settings#labels", "Status names saved")
 
 
 @app.post("/settings/suggest")
