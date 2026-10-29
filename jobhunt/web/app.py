@@ -867,6 +867,16 @@ def job_queue(job_id: int, draft: int = Form(0), next: str = Form("")):
     return back(f"/applications/{app_id}", "Added to your queue")
 
 
+@app.post("/jobs/{job_id}/applied")
+def job_applied(job_id: int, next: str = Form("")):
+    """You already applied on your own: track it as sent, with no letter or form filling."""
+    app_id = queue.enqueue(job_id)
+    queue.set_status(app_id, "submitted", "You applied on your own", source="manual")
+    if next.startswith("/picks"):
+        return back(next, "Got it. It's in Applied, and jobhunt will watch for their reply.")
+    return back(f"/applications/{app_id}", "Marked as applied")
+
+
 @app.post("/jobs/{job_id}/skip")
 def job_skip(job_id: int, next: str = Form("/jobs")):
     queue.skip_job(job_id)

@@ -37,6 +37,7 @@
   <form method="post" action="/jobs/{{ card.id }}/skip"><input type="hidden" name="next" value="{{ next_url }}"><button>Not for me</button></form>
   <form method="post" action="/jobs/{{ card.id }}/queue"><input type="hidden" name="draft" value="1"><input type="hidden" name="next" value="{{ next_url }}"><button class="primary">Apply for me</button></form>
 </div>
+<form method="post" action="/jobs/{{ card.id }}/applied" class="already"><input type="hidden" name="next" value="{{ next_url }}"><button class="link">I already applied to this one</button></form>
 
 {% elif done_n %}
 <div class="hero calm">
