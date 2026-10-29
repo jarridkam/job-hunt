@@ -1,64 +1,84 @@
 {% extends "base.html" %}
 {% import "_sync.html" as sy with context %}
 {% import "_sheet.html" as sh %}
-{% block title %}Upcoming – jobhunt{% endblock %}
-{% block body %}
-<div class="today-head">
-  <h1>Upcoming</h1>
-  <div class="row small">{{ sy.sync_inbox(primary=True) }}
-    <form method="post" action="/run/reclassify" class="inline"><button class="small">Re-read emails</button></form></div>
-</div>
-<p class="small muted">Times are in your zone; the zone the email used is in grey. Tap <b>Edit</b> on any row to fix a time, link or which application it belongs to.</p>
-
-<h2 style="margin-top:4px">Coming up</h2>
-{% if soon %}
-<div class="upcoming">
-{% for s in soon %}
-  <div class="card up-item {{ 'urgent' if s.urgent }}">
-    <div class="up-when">{% if s.at %}<b>{{ s.at|dt('%a %b %d') }}</b><div>{{ s.at|dt('%I:%M %p') }} <span class="muted small">{{ s.at|localtz }}</span></div><div class="small muted">{{ s.at|rel }}</div>{% else %}<b class="warn-text">{{ s.when_text }}</b>{% endif %}</div>
-    <div style="flex:1"><div class="todo-kind">{{ s.kind }}</div><div><b>{{ s.title }}</b></div><div class="small muted">{{ s.detail }}</div></div>
-    {% if s.href %}<a class="btn small" href="{{ s.href }}" {% if s.href.startswith('http') or '/open' in s.href %}target="_blank" rel="noopener"{% endif %}>{{ s.action }}</a>{% endif %}
+{% block title %}Tests &amp; interviews – jobhunt{% endblock %}
+{% macro card(c) -%}
+<div class="ev {{ 'past' if c.sort[0] == 9 }}" id="{{ c.anchor }}">
+  <div class="top">
+    <div class="tile {{ {'warm': 'warm', 'bad': 'bad'}.get(c.tone, 'date') }}" aria-hidden="true">
+      {% if c.at %}<span class="d">{{ c.at.isoformat()|dt('%a') }}</span><span class="n">{{ c.at.isoformat()|dt('%d')|int }}</span>
+      {% else %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>{% endif %}
+    </div>
+    <div class="body"><div class="k">{{ c.kind }}</div><b>{{ c.company }}</b><span class="r">{{ c.what }}</span></div>
+    <span class="tag {{ c.tone }}">{{ c.tag }}</span>
   </div>
-{% endfor %}
+  {% if c.when and c.sort[0] != 9 %}<div class="when">{{ c.when }}</div>{% endif %}
+  {% if c.flags or c.app_id %}<div class="flags">
+    {% for t, f in c.flags %}<span class="{{ 'warn-text' if t == 'warn' }}">{{ f }}</span>{% endfor %}
+    {% if c.app_id %}<a href="/applications/{{ c.app_id }}">{{ c.app_title or 'The application' }}</a>{% endif %}
+  </div>{% endif %}
+  {% if c.sort[0] != 9 %}
+  <div class="acts">
+    {% if c.action %}<a class="btn primary" href="{{ c.action.href }}" {% if c.action.new %}target="_blank" rel="noopener"{% endif %}>{{ c.action.label }}{% if c.action.new %} &#8599;{% endif %}</a>{% endif %}
+    {% if c.prep %}<a class="btn" href="{{ c.prep.href }}">{{ c.prep.label }}</a>{% endif %}
+    {% if c.done %}<form method="post" action="{{ c.done }}" class="inline"><input type="hidden" name="status" value="{{ 'completed' if c.type == 'test' else 'done' }}"><button>{{ "I've done it" if c.type == 'test' else 'Done' }}</button></form>{% endif %}
+    <span class="spacer"></span>
+    <button type="button" class="link" data-sheet="{{ c.sheet }}">Edit</button>
+  </div>
+  {% else %}
+  <div class="acts"><span class="small muted">{{ c.when }}</span><span class="spacer"></span><button type="button" class="link" data-sheet="{{ c.sheet }}">Edit</button></div>
+  {% endif %}
 </div>
-{% else %}<p class="muted">Nothing scheduled in the next two weeks.</p>{% endif %}
+{%- endmacro %}
+{% block body %}
+<div class="pagehead">
+  <div><div class="eyebrow">{{ live|length }} coming up</div><h1>Tests &amp; interviews</h1></div>
+  <form method="post" action="/run/email" class="inline"><button class="small">Check inbox now</button></form>
+</div>
+<span id="interviews"></span><span id="assessments"></span>
 
-<div class="row" style="justify-content:space-between; align-items:baseline; margin-top:18px">
-  <h2 id="interviews" style="margin:0">Interviews &amp; recruiter calls</h2>
-  <button type="button" class="small" data-sheet="sheet-i-new">+ Add an interview</button>
-</div>
-{% for sec in interviews|month_sections('starts_at', 'received_at', 'created_at') %}
-<details class="month" {{ 'open' if sec.open }}><summary>{{ sec.label }} <span class="muted">· {{ sec.count }}</span></summary>
-{% for m in sec.months %}
-{% if sec.months|length > 1 or not sec.open %}<h3>{{ m.label }} <span class="muted small">· {{ m.rows|length }}</span></h3>{% endif %}
-<table class="stack">
-<tr><th>Status</th><th>When</th><th>Company</th><th>Interview</th><th>Application</th><th></th></tr>
-{% for x in m.rows %}
-<tr>
-  <td>{{ iv_pill(x.status) }}{% if x.status == 'scheduled' and x.past %}<div class="small muted">time has passed</div>{% endif %}</td>
-  <td class="small">{% if x.starts_at %}<b>{{ x.starts_at|dt }}</b> <span class="muted">{{ x.starts_at|localtz }}</span>
-    <div class="muted">{{ x.starts_at|rel }}{% if x.tz and x.tz != (x.starts_at|localtz) %} · {{ x.tz }} in the email{% endif %}{% if x.time_source == 'manual' %} · set by you{% endif %}</div>
-    {% else %}<span class="warn-text">no time yet</span><div class="muted">asked {{ x.received_at|rel }}</div>{% endif %}</td>
-  <td><b>{{ x.company }}</b></td>
-  <td>{{ x.stage or 'Interview' }}{% if x.format %} <span class="pill">{{ iv_format(x.format) }}</span>{% endif %}{% if x.duration_minutes %} <span class="small muted">~{{ x.duration_minutes }} min</span>{% endif %}
-    {% if x.interviewer %}<div class="small muted">with {{ x.interviewer }}</div>{% endif %}
-    {% if x.location %}<div class="small muted">{{ x.location }}</div>{% endif %}
-    {% if x.notes %}<div class="small">{{ x.notes }}</div>{% endif %}</td>
-  <td class="small">{% if x.application_id %}<a href="/applications/{{ x.application_id }}">{{ x.app_title }}</a> {{ app_pill(x.app_status) }}{% endif %}</td>
-  <td class="row">
-    {% if x.link %}<a class="btn small {{ 'primary' if x.status in ('needs_scheduling','scheduled') }}" href="{{ x.link }}" target="_blank" rel="noopener">{{ 'Schedule' if x.status == 'needs_scheduling' else 'Join' }}</a>{% endif %}
-    {% if x.status in ('needs_scheduling','scheduled') %}<a class="btn small" href="/interviews/{{ x.id }}/prep">{{ 'Prep card' if x.prep_json else 'Prep me' }}</a>
-      <form method="post" action="/interviews/{{ x.id }}/status" class="inline"><input type="hidden" name="status" value="done"><button class="small">Done</button></form>{% endif %}
-    <button type="button" class="small" data-sheet="sheet-i{{ x.id }}">Edit</button>
-  </td>
-</tr>
+{% for c in live %}{{ card(c) }}{% else %}
+<div class="card empty"><b>Nothing coming up.</b>Test invites and interview emails show up here as soon as they reach your inbox.</div>
 {% endfor %}
-</table>
-{% endfor %}
+
+{% if past %}
+<details class="closed-apps" id="past">
+  <summary>{{ past|length }} done or past</summary>
+  {% for c in past %}{{ card(c) }}{% endfor %}
 </details>
-{% else %}<p class="muted">No interviews yet. When a recruiter emails you to set up a call, or confirms a time, it shows up here.</p>{% endfor %}
+{% endif %}
 
-{% for sec in interviews|month_sections('starts_at', 'received_at', 'created_at') %}{% for m in sec.months %}{% for x in m.rows %}
+<details class="closed-apps" id="more">
+  <summary>Add one yourself, calendar, and more</summary>
+  <div class="row" style="gap:8px; justify-content:center; margin:4px 0 12px">
+    <button type="button" data-sheet="sheet-a-new">+ Add a test</button>
+    <button type="button" data-sheet="sheet-i-new">+ Add an interview</button>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Look further back</h3>
+    <div class="row small">{{ sy.sync_inbox() }}
+      <form method="post" action="/run/reclassify" class="inline"><button class="small">Re-read emails</button></form></div>
+  </div>
+  <div class="card" id="calendar" style="margin-top:12px">
+  <h3 style="margin-top:0">Put these on your phone's calendar</h3>
+  <p class="small muted">Subscribe once; every interview and test deadline shows up with reminders (a day before and an hour before; tests also 2 days before). Updates itself about hourly.</p>
+  <div class="row" style="gap:8px">
+    <input type="text" readonly value="{{ cal_url }}" id="cal-url" style="flex:1; min-width:220px" onclick="this.select()">
+    <button type="button" class="small" onclick="navigator.clipboard.writeText(document.getElementById('cal-url').value).then(function(){document.getElementById('cal-copied').style.display='inline'})">Copy link</button>
+    <a class="btn small" href="{{ cal_url|replace('https://','webcal://')|replace('http://','webcal://') }}">Subscribe</a>
+    <span id="cal-copied" class="small ok-text" style="display:none">copied</span>
+  </div>
+  <details class="small muted" style="margin-top:8px"><summary>How to add it</summary>
+    <b>iPhone:</b> Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar → paste the link.<br>
+    <b>Google Calendar:</b> on a computer, calendar.google.com → Other calendars + → From URL → paste. It then appears on your phone.<br>
+    <b>Outlook:</b> Add calendar → Subscribe from web.<br>
+    Anyone with the link can see these events. <form method="post" action="/calendar/reset" class="inline" data-confirm="Make a new link? The old one stops working."><button class="small" style="border:0; box-shadow:none; padding:0; color:var(--muted); text-decoration:underline">Make a new link</button></form>
+  </details>
+</div>
+
+</details>
+
+{% for x in interviews %}
 {% call sh.sheet('sheet-i' ~ x.id, x.company, x.stage or 'Interview') %}
   <form method="post" action="/interviews/{{ x.id }}/edit" data-autosave>
     <div class="pair">
@@ -94,7 +114,7 @@
     <form method="post" action="/interviews/{{ x.id }}/delete" class="inline"><button class="small danger">Delete</button></form>
   </div>
 {% endcall %}
-{% endfor %}{% endfor %}{% endfor %}
+{% endfor %}
 
 {% call sh.sheet('sheet-i-new', 'Add an interview') %}
 <form method="post" action="/interviews/new">
@@ -115,30 +135,65 @@
 </form>
 {% endcall %}
 
-<div class="row" style="justify-content:space-between; align-items:baseline; margin-top:24px">
-  <h2 id="assessments" style="margin:0">Tests &amp; assessments</h2>
-  <button type="button" class="small" data-sheet="sheet-a-new">+ Add an assessment</button>
-</div>
-<p class="small muted">"guessed" = the email gave no deadline, so it is received + {{ default_days }} days. Check the email.</p>
-{% include "_assessments.html" %}
 
-<div class="card" id="calendar" style="margin-top:24px">
-  <h2 style="margin-top:0">Put all of this on your phone's calendar</h2>
-  <p class="small muted">Subscribe once; every interview and test deadline shows up with reminders (a day before and an hour before; tests also 2 days before). Updates itself about hourly.</p>
-  <div class="row" style="gap:8px">
-    <input type="text" readonly value="{{ cal_url }}" id="cal-url" style="flex:1; min-width:220px" onclick="this.select()">
-    <button type="button" class="small" onclick="navigator.clipboard.writeText(document.getElementById('cal-url').value).then(function(){document.getElementById('cal-copied').style.display='inline'})">Copy link</button>
-    <a class="btn small" href="{{ cal_url|replace('https://','webcal://')|replace('http://','webcal://') }}">Subscribe</a>
-    <span id="cal-copied" class="small ok-text" style="display:none">copied</span>
+{% for x in assessments %}
+{% call sh.sheet('sheet-a' ~ x.id, x.company, (x.platform or '') ~ ' ' ~ x.title) %}
+  <form method="post" action="/assessments/{{ x.id }}/edit" data-autosave>
+    <div class="pair">
+      <div><label>Due</label><input type="datetime-local" name="due_at" value="{{ x.due_at|local16 }}"></div>
+      <div><label>Takes about (min)</label><input type="number" name="est_minutes" value="{{ x.est_minutes or '' }}"></div>
+    </div>
+    <label>Test link</label><input type="url" name="link" value="{{ x.link or '' }}" placeholder="https://…">
+    <label>Notes</label><input type="text" name="notes" value="{{ x.notes or '' }}">
+    <label>Which application is this for? <span class="small muted">(changes on Save)</span></label>
+    <select name="application_id" data-no-autosave>
+      <option value="0">—</option>
+      {% for p in apps if p.id == x.application_id or (p.company or '')|lower == (x.company or '')|lower %}
+      <option value="{{ p.id }}" {{ 'selected' if p.id == x.application_id }}>{{ p.title }}</option>{% endfor %}
+    </select>
+    <label>…or a different role at {{ x.company }}</label><input type="text" name="new_role" data-no-autosave placeholder="e.g. IT Support Engineer I">
+    <input type="hidden" name="undo_token" value="">
+    <div class="sheet-foot"><button class="primary">Save &amp; close</button><span class="autosave-status small muted" aria-live="polite">Changes save as you type</span>
+      {% if x.due_at %}<span class="spacer"></span><a class="btn small" href="/assessments/{{ x.id }}.ics" download>Add to calendar</a>{% endif %}</div>
+  </form>
+  <div class="sheet-more">
+    {% if x.status == 'pending' %}
+      <form method="post" action="/assessments/{{ x.id }}/opened" class="inline"><input type="hidden" name="value" value="{{ '0' if x.opened_at else '1' }}"><button class="small">{{ 'Mark not opened' if x.opened_at else 'I opened it elsewhere' }}</button></form>
+      <form method="post" action="/assessments/{{ x.id }}/status" class="inline"><input type="hidden" name="status" value="missed"><button class="small">I missed it</button></form>
+    {% else %}
+      <form method="post" action="/assessments/{{ x.id }}/status" class="inline"><input type="hidden" name="status" value="pending"><button class="small">Reopen</button></form>
+    {% endif %}
+    <form method="post" action="/assessments/{{ x.id }}/delete" class="inline"><button class="small danger">Delete</button></form>
   </div>
-  <details class="small muted" style="margin-top:8px"><summary>How to add it</summary>
-    <b>iPhone:</b> Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar → paste the link.<br>
-    <b>Google Calendar:</b> on a computer, calendar.google.com → Other calendars + → From URL → paste. It then appears on your phone.<br>
-    <b>Outlook:</b> Add calendar → Subscribe from web.<br>
-    Anyone with the link can see these events. <form method="post" action="/calendar/reset" class="inline" data-confirm="Make a new link? The old one stops working."><button class="small" style="border:0; box-shadow:none; padding:0; color:var(--muted); text-decoration:underline">Make a new link</button></form>
-  </details>
-</div>
+{% endcall %}
+{% endfor %}
 
-<details class="legend small" style="margin-top:24px"><summary>What the colours mean</summary>
-<div class="legend-tones" style="margin-top:8px">{% for k, v in tones.items() %}<span class="pill {{ k }}">{{ v }}</span>{% endfor %}</div></details>
+{% call sh.sheet('sheet-a-new', 'Add an assessment') %}
+<form method="post" action="/assessments/new">
+  <label>Company</label><input type="text" name="company" required>
+  <div class="pair">
+    <div><label>What is it</label><input type="text" name="title" placeholder="Online assessment"></div>
+    <div><label>Platform</label><input type="text" name="platform" placeholder="HackerRank"></div>
+  </div>
+  <div class="pair">
+    <div><label>Due</label><input type="datetime-local" name="due_at"></div>
+    <div><label>Takes about (min)</label><input type="number" name="est_minutes"></div>
+  </div>
+  <label>Test link</label><input type="url" name="link">
+  <label>Application</label><select name="application_id"><option value="0">—</option>{% for p in apps %}<option value="{{ p.id }}">{{ p.company }} — {{ p.title }}</option>{% endfor %}</select>
+  <div class="sheet-foot"><button class="primary">Add</button><button type="button" class="small" data-sheet-close>Cancel</button></div>
+</form>
+{% endcall %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  // Arriving from a Details link: open the right section, bring the card into view, and mark it.
+  var id = decodeURIComponent(location.hash.slice(1)); if (!id) return;
+  var el = document.getElementById(id); if (!el || !el.classList.contains('ev')) return;
+  var d = el.closest('details'); if (d) d.open = true;
+  el.classList.add('focus');
+  setTimeout(function () { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60);
+})();
+</script>
 {% endblock %}

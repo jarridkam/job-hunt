@@ -357,8 +357,8 @@ def due_items() -> list[dict]:
                     "flags": flags, "spam": bits["spam"],
                     "big": big, "sub": sub_, "tone": tone, "sort": target or (now + timedelta(days=365)),
                     "at": target, "real_at": at, "since": _aware(x.get("received_at") or x.get("created_at")), "test": True,
-                    "details": "/upcoming#assessments",
-                    "href": f"/assessments/{x['id']}/open" if x.get("link") else "/upcoming#assessments", "open_new": bool(x.get("link")),
+                    "details": f"/upcoming#a-{x['id']}",
+                    "href": f"/assessments/{x['id']}/open" if x.get("link") else f"/upcoming#a-{x['id']}", "open_new": bool(x.get("link")),
                     "action": "Open test" if x.get("link") else "Details",
                     "done_url": f"/assessments/{x['id']}/status", "done_value": "completed", "done_label": "Done"})
     for x in db.q("SELECT * FROM interviews WHERE status IN ('needs_scheduling','scheduled')"):
@@ -376,8 +376,8 @@ def due_items() -> list[dict]:
                     "via": (f"Email from {dom}. " if dom else "") + (f"With {x['interviewer']}. " if x.get("interviewer") else "") + (x.get("location") or ""),
                     "detail": (x.get("title") or "") + (f" · ~{x['duration_minutes']} min" if x.get("duration_minutes") else ""),
                     "big": big, "sub": sub_, "tone": tone, "sort": at or now,
-                    "at": at, "real_at": at, "since": None, "test": False, "details": "/upcoming#interviews",
-                    "href": x.get("link") or "/upcoming#interviews", "open_new": bool(x.get("link")),
+                    "at": at, "real_at": at, "since": None, "test": False, "details": f"/upcoming#i-{x['id']}",
+                    "href": x.get("link") or f"/upcoming#i-{x['id']}", "open_new": bool(x.get("link")),
                     "action": ("Schedule" if at is None else "Join") if x.get("link") else "Details",
                     "done_url": f"/interviews/{x['id']}/status", "done_value": "done", "done_label": "Done"})
     out.sort(key=lambda d: (d["tone"] != "bad" and d["big"] != "Pick a time", d["sort"]))
@@ -755,18 +755,18 @@ def needs_you_items() -> list[dict]:
         if at is None:
             items.append({"kind": "Pick an interview time", "title": what,
                           "detail": (f"{x['interviewer']} asked" if x.get("interviewer") else "They asked") + " for your availability. Reply or use their scheduling link, then set the time on Upcoming.",
-                          "href": x.get("link") or "/upcoming#interviews", "action": "Schedule" if x.get("link") else "Open", "urgent": True})
+                          "href": x.get("link") or f"/upcoming#i-{x['id']}", "action": "Schedule" if x.get("link") else "Open", "urgent": True})
         elif hours < -2:
             items.append({"kind": "Interview happened", "title": what,
                           "detail": f"It was {_rel(x['starts_at'])}. Mark it done or missed on Upcoming.",
-                          "href": "/upcoming#interviews", "action": "Open", "urgent": False})
+                          "href": f"/upcoming#i-{x['id']}", "action": "Open", "urgent": False})
         elif hours <= 48:
             items.append({"kind": "Interview " + _rel(x["starts_at"]), "title": what,
                           "detail": (f"{messages.INTERVIEW_FORMAT.get(x.get('format') or '', 'Interview')} " if x.get("format") else "")
                                     + (f"with {x['interviewer']}. " if x.get("interviewer") else "")
                                     + (f"~{x['duration_minutes']} min. " if x.get("duration_minutes") else "")
                                     + (x.get("location") or ""),
-                          "href": x.get("link") or "/upcoming#interviews", "action": "Join" if x.get("link") else "Open",
+                          "href": x.get("link") or f"/upcoming#i-{x['id']}", "action": "Join" if x.get("link") else "Open",
                           "urgent": hours < 24})
     for x in db.q("SELECT * FROM assessments WHERE status='pending' ORDER BY COALESCE(due_at, '9999')"):
         due = _parse_dt(x["due_at"]) if x.get("due_at") else None
@@ -778,7 +778,7 @@ def needs_you_items() -> list[dict]:
         when = ("overdue" if hours is not None and hours < 0 else f"due {_rel(x['due_at'])}" if hours is not None else "no deadline given")
         items.append({"kind": "Assessment " + when, "title": f"{x.get('platform') or ''} {x.get('title') or ''} · {x.get('company') or ''}".strip(" ·"),
                       "detail": (f"About {x['est_minutes']} min. " if x.get("est_minutes") else "") + "Do it, then mark it done on Upcoming.",
-                      "href": f"/assessments/{x['id']}/open" if x.get("link") else "/upcoming#assessments", "action": "Open test" if x.get("link") else "Open",
+                      "href": f"/assessments/{x['id']}/open" if x.get("link") else f"/upcoming#a-{x['id']}", "action": "Open test" if x.get("link") else "Open",
                       "urgent": hours is not None and hours < 24})
     for a in db.q("SELECT id, company, title FROM applications WHERE status='ready' AND cover_letter IS NOT NULL "
                   "AND cover_letter_approved=0 ORDER BY last_update_at DESC"):
@@ -1229,7 +1229,7 @@ def coming_up(days: int = 14, limit: int = 12) -> list[dict]:
                     "title": f"{what} · {x.get('company') or ''}", "detail": (x.get("title") or "") + who,
                     "at": x.get("starts_at") if at is not None else None,
                     "when_text": "needs a time" if at is None else "",
-                    "href": x.get("link") or "/upcoming#interviews", "action": ("Join" if at is not None else "Schedule") if x.get("link") else "Open",
+                    "href": x.get("link") or f"/upcoming#i-{x['id']}", "action": ("Join" if at is not None else "Schedule") if x.get("link") else "Open",
                     "urgent": at is None or (at - now).total_seconds() < 24 * 3600, "sort": at or now})
     for x in db.q("SELECT * FROM assessments WHERE status='pending' ORDER BY COALESCE(due_at,'9999')"):
         at = _aware(x.get("due_at"))
@@ -1238,10 +1238,91 @@ def coming_up(days: int = 14, limit: int = 12) -> list[dict]:
         out.append({"kind": "Assessment due", "title": f"{x.get('platform') or ''} {x.get('title') or ''} · {x.get('company') or ''}".strip(" ·"),
                     "detail": (f"About {x['est_minutes']} min" if x.get("est_minutes") else "") + (" · deadline assumed" if x.get("due_source") == "assumed" else ""),
                     "at": x.get("due_at") if at is not None else None, "when_text": "no deadline given",
-                    "href": f"/assessments/{x['id']}/open" if x.get("link") else "/upcoming#assessments", "action": "Open test" if x.get("link") else "Open",
+                    "href": f"/assessments/{x['id']}/open" if x.get("link") else f"/upcoming#a-{x['id']}", "action": "Open test" if x.get("link") else "Open",
                     "urgent": at is not None and (at - now).total_seconds() < 24 * 3600, "sort": at or (now + timedelta(days=days))})
     out.sort(key=lambda i: (i["at"] is not None and i["kind"] != "Assessment due" or i["at"] is not None, i["sort"]))
     return out[:limit]
+
+
+def upcoming_cards(interviews: list[dict], assessments: list[dict], now: datetime) -> tuple[list[dict], list[dict]]:
+    """Tests and interviews as cards: (live, past). Live ones are in the order to deal with them; each says when,
+    in one line, and carries one main action. Past ones are kept for the record."""
+    live: list[dict] = []
+    past: list[dict] = []
+    for x in interviews:
+        at = _aware(x.get("starts_at"))
+        fmt = messages.INTERVIEW_FORMAT.get(x.get("format") or "", "")
+        c = {"anchor": f"i-{x['id']}", "sheet": f"sheet-i{x['id']}", "id": x["id"], "type": "interview", "x": x,
+             "company": x.get("company") or "Unknown company", "what": x.get("stage") or "Interview",
+             "kind": "Interview" + (f" · {fmt}" if fmt else ""), "at": at, "status": x["status"],
+             "app_id": x.get("application_id"), "app_title": x.get("app_title"), "flags": [], "action": None}
+        if x["status"] in ("needs_scheduling", "scheduled"):
+            if at is None:
+                c.update(tag="Pick a time", tone="warm", when="They asked " + _rel(x.get("received_at") or x.get("created_at")) + ". Reply with a time that works.", sort=(0, now))
+                if x.get("link"):
+                    c["action"] = {"label": "Pick a time", "href": x["link"], "new": True}
+            elif at < now - timedelta(hours=3):
+                c.update(tag="Did it happen?", tone="warm", when=at.astimezone().strftime("Was %a %b ") + str(at.astimezone().day) + ", " + at.astimezone().strftime("%I:%M %p").lstrip("0"), sort=(1, at))
+            else:
+                soon = (at - now).total_seconds() < 24 * 3600
+                c.update(tag=_rel(at.isoformat()), tone="warm" if soon else "", sort=(1, at),
+                         when=at.astimezone().strftime("%a %b ") + str(at.astimezone().day) + ", " + at.astimezone().strftime("%I:%M %p").lstrip("0") +
+                         (f" · {x['duration_minutes']} min" if x.get("duration_minutes") else ""))
+                if x.get("link"):
+                    c["action"] = {"label": "Join", "href": x["link"], "new": True}
+            if not c["action"]:
+                c["action"] = {"label": "Prep card" if x.get("prep_json") else "Prep me", "href": f"/interviews/{x['id']}/prep"}
+            else:
+                c["prep"] = {"label": "Prep card" if x.get("prep_json") else "Prep me", "href": f"/interviews/{x['id']}/prep"}
+            c["done"] = f"/interviews/{x['id']}/status" if at is not None else None   # nothing to mark done until there's a time
+            if x.get("interviewer"):
+                c["flags"].append(("", "With " + x["interviewer"]))
+            if x.get("location"):
+                c["flags"].append(("", x["location"]))
+            live.append(c)
+        else:
+            c.update(tag=messages.interview_status(x["status"])[0], tone="", when=at.astimezone().strftime("%b %d") if at else "", sort=(9, at or now))
+            past.append(c)
+    for x in assessments:
+        due = _aware(x.get("due_at"))
+        by = _aware(x.get("do_by")) if x.get("do_by") else None
+        what = x.get("title") or "Assessment"
+        c = {"anchor": f"a-{x['id']}", "sheet": f"sheet-a{x['id']}", "id": x["id"], "type": "test", "x": x,
+             "company": x.get("company") or "Unknown company", "what": what,
+             "kind": "Test" + (f" · {x['platform']}" if x.get("platform") else "") + (f" · ~{x['est_minutes']} min" if x.get("est_minutes") else ""),
+             "at": by or due, "status": x["status"], "app_id": x.get("application_id"), "app_title": x.get("app_title"),
+             "flags": [], "action": None}
+        if x["status"] == "pending":
+            if due is None:
+                c.update(tag="No deadline", tone="warm", when="The email didn't say when it's due. Do it soon, or ask the recruiter.", sort=(2, now + timedelta(days=365)))
+            else:
+                fmt = lambda d: d.astimezone().strftime("%a %b ") + str(d.astimezone().day)
+                if due < now:
+                    c.update(tag="Overdue", tone="bad", when=f"Was due {fmt(due)}. The link may still work.")
+                else:
+                    target = by or due
+                    soon = (target - now).total_seconds() < 48 * 3600
+                    c.update(tag=_rel(target.isoformat()), tone="warm" if soon else "",
+                             when=(f"Do it by {fmt(by)} · real deadline {fmt(due)}" if by else f"Due {fmt(due)}, "
+                                   + due.astimezone().strftime("%I:%M %p").lstrip("0")))
+                c["sort"] = (1, by or due)
+            if x.get("link"):
+                c["action"] = {"label": "Open test", "href": f"/assessments/{x['id']}/open", "new": True}
+            c["done"] = f"/assessments/{x['id']}/status"
+            if x.get("due_source") == "assumed":
+                c["flags"].append(("warn", "Deadline guessed. Check the email."))
+            if x.get("spam"):
+                c["flags"].append(("warn", "The invite was in Spam"))
+            if not x.get("opened_at"):
+                c["flags"].append(("", "Not opened yet"))
+            live.append(c)
+        else:
+            c.update(tag=messages.assessment_status(x["status"])[0],
+                     tone="bad" if x["status"] == "missed" else "", when=due.astimezone().strftime("%b %d") if due else "", sort=(9, due or now))
+            past.append(c)
+    live.sort(key=lambda c: c["sort"])
+    past.sort(key=lambda c: c["sort"][1], reverse=True)
+    return live, past
 
 
 @app.get("/upcoming", response_class=HTMLResponse)
@@ -1264,7 +1345,8 @@ def upcoming(request: Request):
         x["spam"] = bool(f) and f != "inbox" and ("spam" in f or "junk" in f)
         t = do_by(_aware(x.get("due_at")), now)
         x["do_by"] = t.isoformat() if t and x.get("status") == "pending" and _aware(x.get("due_at")) and t != _aware(x.get("due_at")) else None
-    return render(request, "upcoming.html", soon=coming_up(), interviews=interviews, assessments=assessments, apps=apps, cal_url=cal_url,
+    live, past = upcoming_cards(interviews, assessments, now)
+    return render(request, "upcoming.html", live=live, past=past, interviews=interviews, assessments=assessments, apps=apps, cal_url=cal_url,
                   formats=list(messages.INTERVIEW_FORMAT.items()), default_days=config.get_int("assessment_default_days", 7))
 
 
@@ -1285,11 +1367,11 @@ def interview_new(company: str = Form(""), stage: str = Form(""), format: str = 
 
 
 @app.post("/interviews/{iid}/status")
-def interview_status(iid: int, status: str = Form(...)):
+def interview_status(iid: int, request: Request, status: str = Form(...)):
     if status not in ("needs_scheduling", "scheduled", "done", "cancelled", "missed"):
-        return back("/upcoming#interviews", "unknown status")
+        return back(f"/upcoming#i-{iid}", "unknown status")
     db.update("interviews", iid, {"status": status})
-    return back("/upcoming#interviews", "marked " + messages.interview_status(status)[0].lower())
+    return back_here(request, f"/upcoming#i-{iid}", "Marked " + messages.interview_status(status)[0].lower())
 
 
 @app.post("/interviews/{iid}/edit")
@@ -1315,8 +1397,8 @@ def interview_edit(iid: int, request: Request, starts_at: str = Form(""), durati
         return JSONResponse({"ok": True, "undo": tok})
     if new_role.strip() or (application_id and application_id != x.get("application_id")):
         email_tracker.relink("interviews", iid, application_id or None, new_role)
-        return back("/upcoming#interviews", "Saved. The interview is now linked to " + (new_role.strip() or "that application"))
-    return back("/upcoming#interviews", "Saved", undo=tok)
+        return back(f"/upcoming#i-{iid}", "Saved. The interview is now linked to " + (new_role.strip() or "that application"))
+    return back(f"/upcoming#i-{iid}", "Saved", undo=tok)
 
 
 # ---- calendar + prep ------------------------------------------------------------
@@ -1530,12 +1612,14 @@ def assessment_opened(aid: int, value: str = Form("1")):
 
 
 @app.post("/assessments/{aid}/status")
-def assessment_status(aid: int, status: str = Form(...)):
+def assessment_status(aid: int, request: Request, status: str = Form(...)):
+    if status not in ("pending", "completed", "missed"):
+        return back(f"/upcoming#a-{aid}", "unknown status")
     fields = {"status": status}
     if status == "completed":
         fields["completed_at"] = db.now_iso()
     db.update("assessments", aid, fields)
-    return back("/upcoming#assessments", f"marked {status}")
+    return back_here(request, f"/upcoming#a-{aid}", "Marked " + messages.assessment_status(status)[0].lower())
 
 
 @app.post("/assessments/{aid}/edit")
@@ -1558,8 +1642,8 @@ def assessment_edit(aid: int, request: Request, due_at: str = Form(""), est_minu
     cur_app = (db.q1("SELECT application_id FROM assessments WHERE id=?", (aid,)) or {}).get("application_id")
     if new_role.strip() or (application_id and application_id != cur_app):
         email_tracker.relink_assessment(aid, application_id or None, new_role)
-        return back("/upcoming#assessments", "Saved. The assessment is now linked to " + (new_role.strip() or "that application"))
-    return back("/upcoming#assessments", "Saved", undo=tok)
+        return back(f"/upcoming#a-{aid}", "Saved. The assessment is now linked to " + (new_role.strip() or "that application"))
+    return back(f"/upcoming#a-{aid}", "Saved", undo=tok)
 
 
 @app.post("/assessments/{aid}/delete")
