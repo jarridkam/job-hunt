@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>jobhunt – log in</title>
+<link rel="icon" href="/static/icons/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css?v={{ boot }}">
 </head>
 <body>
 <main class="login">
   <div class="card">
-    <div class="brand">jobhunt</div>
+    <div class="brand"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="4.2" fill="var(--dot)"/></svg><span>jobhunt</span></div>
     {% if mode == 'closed' %}
       <p>No password has been set yet.</p>
       <p class="small muted">Open jobhunt on your PC (http://127.0.0.1:8765) to set one, then come back here.</p>

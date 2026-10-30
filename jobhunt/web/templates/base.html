@@ -9,7 +9,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css?v={{ boot }}">
 <link rel="manifest" href="/static/manifest.webmanifest">
-<link rel="icon" href="/static/icons/icon-192.png" type="image/png">
+<link rel="icon" href="/static/icons/logo.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/static/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <meta name="theme-color" content="#F4ECDB" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1E1712" media="(prefers-color-scheme: dark)">
@@ -47,7 +48,7 @@
 {% set t_applied = _on(['/applications', '/queue', '/messages', '/takeover'])|trim %}
 {% set t_settings = _on(['/settings', '/documents', '/runs', '/setup', '/companies'])|trim %}
 <header class="topbar">
-  <a href="/" class="brand">jobhunt</a>
+  <a href="/" class="brand"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="4.2" fill="var(--dot)"/></svg><span>jobhunt</span></a>
   <nav class="tabs3" aria-label="Main">
     <a href="/" class="{{ 'on' if t_today }}" {% if t_today %}aria-current="page"{% endif %}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Today<span id="nyc" class="count" style="display:none"></span></a>
