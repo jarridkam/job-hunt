@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 from . import config, db, legit
@@ -120,8 +121,74 @@ def _context(log) -> SourceContext:
     )
 
 
-def _store(job: Job, run_id: int) -> str:
-    """Insert a job; returns 'new' | 'dup' | 'merged' | 'filtered'."""
+# Wording a dead job page uses. It says "this job has been filled", never "until the position is filled",
+# which is in plenty of live ads.
+_JOB = r"(?:job|position|role|posting|listing|opening|vacancy|requisition|opportunity)s?"
+CLOSED_PAGE = re.compile(
+    rf"\b{_JOB}\b[^.!?\n]{{0,40}}\b(?:no longer (?:available|open|active|accepting|exists?|posted|listed)|"
+    r"(?:has|have) been (?:filled|closed|removed|taken down)|has (?:closed|expired)|is (?:now )?(?:closed|expired))\b"
+    rf"|\b{_JOB} (?:was )?not found\b|\bpage not found\b|\bno longer accepting\b|\bnot accepting (?:new )?applications\b"
+    r"|\bapplications? (?:are |is |have |has |now )+closed\b", re.I)
+
+
+class _VisibleText(HTMLParser):
+    """Page text a person would see. Job sites keep a hidden "this job has closed" notice on every open job."""
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+    SKIP = {"script", "style", "noscript", "template", "head"}
+    HIDDEN = re.compile(r"\b(?:w-condition-invisible|hidden|d-none|sr-only)\b")
+    NO_SHOW = re.compile(r"display\s*:\s*none|visibility\s*:\s*hidden", re.I)
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.text, self.open_tags, self.hide_at = [], [], None
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.VOID:
+            return
+        self.open_tags.append(tag)
+        a = dict(attrs)
+        if self.hide_at is None and (tag in self.SKIP or "hidden" in a or self.HIDDEN.search(a.get("class") or "")
+                                     or self.NO_SHOW.search(a.get("style") or "")):
+            self.hide_at = len(self.open_tags)
+
+    def handle_endtag(self, tag):
+        if tag not in self.open_tags:
+            return
+        while self.open_tags.pop() != tag:    # closes anything left unclosed inside it
+            pass
+        if self.hide_at is not None and len(self.open_tags) < self.hide_at:
+            self.hide_at = None
+
+    def handle_data(self, data):
+        if self.hide_at is None:
+            self.text.append(data)
+
+
+def visible_text(page: str) -> str:
+    v = _VisibleText()
+    v.feed(page)
+    return " ".join(" ".join(v.text).split())
+
+
+def page_closed(http, url: str) -> str:
+    """Why this job's page says it's gone, or "" if it looks open. A page we can't read counts as open:
+    sites that block robots shouldn't cost you a real job."""
+    try:
+        r = http.get(url, timeout=8.0)
+    except Exception:  # noqa: BLE001
+        return ""
+    if r.status_code in (404, 410):
+        return f"page gone ({r.status_code})"
+    if r.status_code != 200 or "html" not in r.headers.get("content-type", ""):
+        return ""
+    if "error=true" in str(r.url):    # Greenhouse sends closed jobs back to the board like this
+        return "sent back to the job board"
+    hit = CLOSED_PAGE.search(visible_text(r.text))
+    return f'page says "{hit.group(0)}"' if hit else ""
+
+
+def _store(job: Job, run_id: int, http=None) -> str:
+    """Insert a job; returns 'new' | 'dup' | 'merged' | 'filtered' | 'closed'."""
     if config.get_bool("remote_only") and not job.remote:
         return "filtered"
     ats = detect_ats(job.apply_url) or detect_ats(job.url)
@@ -145,6 +212,16 @@ def _store(job: Job, run_id: int) -> str:
     row.update({"legit_score": s, "legit_reasons": db.dumps(why)})
     if s < config.get_int("min_legit_score", 55):
         row["status"] = "not_legit"
+    # Company boards only list open jobs. Everything else can be weeks stale, so read the page itself.
+    gone = ""
+    if http and (job.source not in FETCHERS or job.source == "board"):
+        gone = page_closed(http, job.url) or (page_closed(http, job.apply_url) if job.apply_url != job.url else "")
+    if gone:
+        # Kept, hidden, so the next search doesn't check it all over again.
+        row["status"] = "closed"
+        db.insert("jobs", row)
+        db.run_log(run_id, f"skipped closed job: {job.company} {job.title}: {gone}")
+        return "closed"
     db.insert("jobs", row)
     if ats and job.source not in FETCHERS:
         # Discovered a company board via an aggregator link: pull the whole board next run.
@@ -159,7 +236,7 @@ def fetch_all(run_id: int) -> dict:
     ctx = _context(log)
     if not ctx.titles:
         raise RuntimeError("No target titles set. Fill Settings > Target job titles (or click Suggest from resume).")
-    counts = {"new": 0, "dup": 0, "merged": 0, "filtered": 0}
+    counts = {"new": 0, "dup": 0, "merged": 0, "filtered": 0, "closed": 0}
     jobs: list[Job] = []
 
     for c in db.q("SELECT * FROM companies WHERE enabled=1 ORDER BY name"):
@@ -191,7 +268,7 @@ def fetch_all(run_id: int) -> dict:
     for j in jobs:
         if not j.title or not (j.apply_url or j.url):
             continue
-        counts[_store(j, run_id)] += 1
+        counts[_store(j, run_id, ctx.http)] += 1
     ctx.http.close()
     log(f"fetch done: {counts}")
     return counts

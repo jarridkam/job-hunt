@@ -36,6 +36,7 @@ JOB_STATUS: dict[str, tuple[str, str, str]] = {
     "applied": ("Applied", "You applied to this one.", "good"),
     "skipped": ("Passed", "You passed on this job.", "closed"),
     "low_fit": ("Not a match", "Scored below your minimum fit, or outside your target titles.", "closed"),
+    "closed": ("Closed", "Its page says the job is no longer open.", "broken"),
     "not_legit": ("Looks off", "Failed the legitimacy check. Tap its legit score to see why.", "broken"),
 }
 
