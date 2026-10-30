@@ -27,6 +27,7 @@ APP_STATUS: dict[str, tuple[str, str, str]] = {
     "offer": ("Offer!", "You have an offer.", "good"),
     "rejected": ("Let go", "They went another way. It happens to everyone; it says nothing about the next one.", "closed"),
     "withdrawn": ("Stepped back", "You decided not to continue.", "closed"),
+    "stale": ("Went cold", "No news for a long time, so you cleared it out. If they write, it comes back by itself.", "closed"),
 }
 
 JOB_STATUS: dict[str, tuple[str, str, str]] = {
@@ -59,7 +60,7 @@ EVENT_LABELS = {"queued": "Added to queue", "drafted": "Letter drafted", "approv
 INTERVIEW_STATUS = {"needs_scheduling": ("Pick a time", "wait"), "scheduled": ("Scheduled", "good"), "done": ("Done", "closed"),
                     "cancelled": ("Cancelled", "closed"), "missed": ("Missed", "broken")}
 INTERVIEW_FORMAT = {"phone": "Phone", "video": "Video", "onsite": "In person", "recorded": "Recorded"}
-SOURCE_LABELS = {"manual": "you", "system": "jobhunt", "email": "email"}
+SOURCE_LABELS = {"manual": "you", "system": "jobhunt", "email": "email", "tidy": "you"}
 
 
 def interview_status(code: str | None) -> tuple[str, str]:

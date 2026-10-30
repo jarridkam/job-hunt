@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS applications (
     title TEXT,
     status TEXT NOT NULL DEFAULT 'queued',
     -- queued | drafting | ready | applying | needs_attention | submitted | failed
-    -- | screening | assessment | interview | offer | rejected | withdrawn
+    -- | screening | assessment | interview | offer | rejected | withdrawn | stale
     cover_letter TEXT,
     cover_letter_approved INTEGER NOT NULL DEFAULT 0,
     resume_doc_id INTEGER,

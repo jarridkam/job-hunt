@@ -160,7 +160,7 @@
 {% endif %}
 {% endif %}
 
-{% if a.status in ('rejected', 'withdrawn') %}
+{% if a.status in ('rejected', 'withdrawn', 'stale') %}
 <div class="card"><b>{{ app_label(a.status) }}.</b> <span class="muted">{{ app_hint(a.status) }}</span></div>
 {% endif %}
 

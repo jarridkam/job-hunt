@@ -33,7 +33,7 @@ def stale(limit: int = 50) -> list[dict]:
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=days_setting())
     out = []
-    rows = db.q("SELECT a.*, (SELECT MAX(happened_at) FROM application_events e WHERE e.application_id=a.id) AS last_event "
+    rows = db.q("SELECT a.*, (SELECT MAX(happened_at) FROM application_events e WHERE e.application_id=a.id AND COALESCE(e.source,'') != 'tidy') AS last_event "
                 "FROM applications a WHERE a.status='submitted' ORDER BY COALESCE(a.applied_at, a.created_at)")
     for a in rows:
         if (a.get("company") or "").startswith("(unknown") or (a.get("title") or "").startswith("(unknown"):

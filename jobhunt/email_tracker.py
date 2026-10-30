@@ -35,7 +35,7 @@ FORWARDED = re.compile(r"^\s*(?:fwd?|fw|tr|wg)\s*:|\[jobhunt\]|#jobhunt", re.I)
 
 PREFILTER_HEAD = re.compile(r"applied|application|candidate|position|offer|role|careers?|jobs?@|no-?reply@.*(?:hr|talent|careers|jobs)", re.I)
 
-STATUS_RANK = {"queued": 0, "drafting": 0, "ready": 0, "applying": 0, "needs_attention": 0, "failed": 0,
+STATUS_RANK = {"stale": 0, "queued": 0, "drafting": 0, "ready": 0, "applying": 0, "needs_attention": 0, "failed": 0,
                "submitted": 1, "screening": 2, "assessment": 3, "interview": 4, "offer": 5, "rejected": 6, "withdrawn": 6}
 
 KIND_TO_STATUS = {

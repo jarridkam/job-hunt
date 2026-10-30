@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Clear out old things – jobhunt{% endblock %}
+{% macro group(rows, name) -%}
+  {% for r in rows %}
+  <label class="tidy-row">
+    <input type="checkbox" name="keys" value="{{ r.key }}" form="{{ name }}" checked>
+    <span class="body"><b>{{ r.company or 'Unknown company' }}</b>{% if r.title %} <span class="muted">· {{ r.title }}</span>{% endif %}
+      <span class="small muted tidy-what">{{ r.what }} · {{ r.age }} days</span></span>
+  </label>
+  {% endfor %}
+{%- endmacro %}
+{% block body %}
+<div class="pagehead"><div><div class="eyebrow">Keep Today about today</div><h1>Clear out old things</h1></div></div>
+<p class="small muted">Nothing here gets deleted, and you can undo right after. If a company writes, it comes back by itself.</p>
+
+<div class="row tidy-ages" role="group" aria-label="How old">
+  <span class="small muted">No news for</span>
+  {% for d in choices %}<a class="btn small{{ ' primary' if d == days }}" href="/tidy?days={{ d }}"{% if d == days %} aria-current="true"{% endif %}>{{ d }} days</a>{% endfor %}
+</div>
+
+{% if not active and not gone %}
+<div class="card"><b>Nothing that old.</b> <span class="muted">Today only has things that still matter.</span></div>
+{% endif %}
+
+{% if active %}
+<div class="eyebrow section-label">Probably still active</div>
+<form id="hide" method="post" action="/tidy/hide"><input type="hidden" name="days" value="{{ days }}"></form>
+<div class="card">
+  <p class="small muted" style="margin-top:0">Under {{ gone_after }} days of quiet, so they could still answer. They stay in Applied and jobhunt keeps watching. They just stop showing on Today.</p>
+  {{ group(active, 'hide') }}
+  <button class="primary" form="hide" style="margin-top:10px">Hide from Today</button>
+</div>
+{% endif %}
+
+{% if gone %}
+<div class="eyebrow section-label">Most likely over</div>
+<form id="close" method="post" action="/tidy/close"><input type="hidden" name="days" value="{{ days }}"></form>
+<div class="card">
+  <p class="small muted" style="margin-top:0">{{ gone_after }} days or more with nothing. Companies rarely come back after that, and old postings are usually closed. These move to the closed list in Applied. Untick any you still want to chase.</p>
+  {{ group(gone, 'close') }}
+  <button class="primary" form="close" style="margin-top:10px">Close these</button>
+</div>
+{% endif %}
+{% endblock %}

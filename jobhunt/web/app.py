@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from .. import calendar_feed, capture, config, db, facts, health, mail, receipts, deadlines, documents, email_tracker, followup, llm, matcher, notify, pipeline, queue, tasks, writer
-from .. import messages, undo, work
+from .. import messages, tidy, undo, work
 from ..paths import SCREENSHOTS
 from . import auth, takeover
 
@@ -427,7 +427,8 @@ def _hero_from_due(d: dict, now: datetime) -> dict:
     return h
 
 
-def today_plan(due: list[dict], needs: list[dict], setup_min: int, match_count: int, setup_urgent: bool = True) -> tuple[dict, list[dict]]:
+def today_plan(due: list[dict], needs: list[dict], setup_min: int, match_count: int, setup_urgent: bool = True,
+               old_count: int = 0) -> tuple[dict, list[dict]]:
     """Today = one hero card (the next thing) + a short list of what comes after.
     Order: a close test or interview, then anything urgent waiting on you, then any other dated thing,
     then setup, then today's picks, then all clear."""
@@ -476,9 +477,12 @@ def today_plan(due: list[dict], needs: list[dict], setup_min: int, match_count: 
         rows.append({"tile": "bad" if i.get("problem") else "warm", "icon": "alert" if i.get("problem") else "dot",
                      "t": i["title"], "s": i.get("detail", ""), "href": i["href"], "post": i.get("post"), "action": i["action"],
                      "dismiss": i.get("dismiss")})
+    hidden = tidy.hidden_ids()
     for t in mail.threads():
         if not t["awaiting_you"]:
             break
+        if t["id"] in hidden or t["status"] == "stale":
+            continue
         who = (t["last"].get("who") or "them").split(" ")[0].split("@")[0]
         rows.append({"tile": "warm", "icon": "reply", "t": f"Reply to {who} at {t['company']}",
                      "s": (t["last"].get("subject") or "They wrote to you") + " · " + _rel(t["last_at"]), "href": f"/messages/{t['id']}"})
@@ -487,6 +491,8 @@ def today_plan(due: list[dict], needs: list[dict], setup_min: int, match_count: 
     if used != "picks" and match_count:
         rows.append({"tile": "date", "icon": "picks", "t": f"{min(match_count, PICKS_PER_DAY)} new jobs picked for you",
                      "s": "Say yes or no to each", "href": "/picks", "go": "See them"})
+    if old_count:
+        rows.append({"tile": "", "icon": "clock", "t": "Clear out old things", "s": f"{old_count} with no news in {tidy.MIN_DAYS}+ days", "href": "/tidy"})
     return hero, rows
 
 
@@ -505,7 +511,7 @@ def today(request: Request):
     _n, setup_min = setup_left()
     st = setup_state()
     urgent = not (st["key"] and st["email"] and st["resume"] and st["titles"])   # the parts nothing works without
-    hero, rows = today_plan(due_items(), needs, setup_min, match_count, setup_urgent=urgent)
+    hero, rows = today_plan(due_items(), needs, setup_min, match_count, setup_urgent=urgent, old_count=tidy.count())
     now = datetime.now().astimezone()
     return render(request, "today.html", hero=hero, rows=rows, needs_total=len(items),
                   date_line=now.strftime("%A, %B ") + str(now.day))
@@ -735,10 +741,13 @@ def run_detail(run_id: int):
 def needs_you_items() -> list[dict]:
     """Everything waiting on the user, most urgent first: {kind, title, detail, href, action, urgent}."""
     items: list[dict] = health.problems()
+    hidden = tidy.hidden_ids()
     last_note = lambda app_id: ((db.q1("SELECT detail FROM application_events WHERE application_id=? "  # noqa: E731
                                        "ORDER BY happened_at DESC, id DESC LIMIT 1", (app_id,)) or {}).get("detail") or "")
     for a in db.q("SELECT id, company, title, status FROM applications WHERE status IN ('review','needs_attention','failed') "
                   "ORDER BY CASE status WHEN 'review' THEN 0 ELSE 1 END, last_update_at DESC"):
+        if a["id"] in hidden:
+            continue
         if a["status"] == "review":
             items.append({"kind": "Check before sending", "title": f"{a['title']} @ {a['company']}",
                           "detail": "Auto-apply filled the form and is waiting for you to check it and press Send.",
@@ -782,6 +791,8 @@ def needs_you_items() -> list[dict]:
                       "urgent": hours is not None and hours < 24})
     for a in db.q("SELECT id, company, title FROM applications WHERE status='ready' AND cover_letter IS NOT NULL "
                   "AND cover_letter_approved=0 ORDER BY last_update_at DESC"):
+        if a["id"] in hidden:
+            continue
         items.append({"kind": "Letter ready to read", "title": f"{a['title']} @ {a['company']}",
                       "detail": "Read it, edit until it sounds like you, then approve and apply.",
                       "href": f"/applications/{a['id']}", "action": "Read letter", "urgent": False})
@@ -792,8 +803,8 @@ def needs_you_items() -> list[dict]:
                       "href": f"/applications/{a['id']}#followup", "action": "Draft a note", "urgent": False})
     if len(quiet) > 3:
         items.append({"kind": "Follow up?", "title": f"{len(quiet) - 3} more have gone quiet",
-                      "detail": "Oldest first under Pipeline › Quiet. Do one a day; it adds up.",
-                      "href": "/applications?status=quiet", "action": "See them", "urgent": False})
+                      "detail": "Chase a few, or clear out the ones that have gone cold.",
+                      "href": "/tidy", "action": "See them", "urgent": False})
     items.sort(key=lambda i: not i["urgent"])
     return items
 
@@ -957,6 +968,25 @@ def queue_remove(ids: list[int] = Form([])):
     return back("/queue", f"Removed {n} from your queue" if n else "Nothing selected")
 
 
+@app.get("/tidy", response_class=HTMLResponse)
+def tidy_page(request: Request, days: int = tidy.MIN_DAYS):
+    days = days if days in tidy.CHOICES else tidy.MIN_DAYS
+    c = tidy.candidates(days)
+    return render(request, "tidy.html", days=days, choices=tidy.CHOICES, active=c["active"], gone=c["gone"], gone_after=tidy.GONE_AFTER)
+
+
+@app.post("/tidy/close")
+def tidy_close(keys: list[str] = Form([]), days: int = Form(tidy.MIN_DAYS)):
+    n, tok = tidy.close(keys)
+    return back(f"/tidy?days={days}", f"Closed {n}. If any of them write, it comes back." if n else "Nothing selected", undo=tok)
+
+
+@app.post("/tidy/hide")
+def tidy_hide(keys: list[str] = Form([]), days: int = Form(tidy.MIN_DAYS)):
+    n, tok = tidy.hide(keys)
+    return back(f"/tidy?days={days}", f"Hid {n} from Today. jobhunt is still watching for replies." if n else "Nothing selected", undo=tok)
+
+
 def applied_groups() -> dict[str, list[dict]]:
     """Every application, sorted into whose move it is. Each card says the one thing that matters about it."""
     now = datetime.now(timezone.utc)
@@ -988,7 +1018,7 @@ def applied_groups() -> dict[str, list[dict]]:
             c.update(tag="Reply", kind="mine", group="mine")
         elif st in ("queued", "drafting", "applying"):
             c.update(tag="Filling the form" if st == "applying" else "Writing letter", kind="busy", group="busy")
-        elif st in ("rejected", "withdrawn"):
+        elif st in ("rejected", "withdrawn", "stale"):
             c.update(tag=messages.app_status(st)[0], group="closed")
         else:
             at = _aware(iv.get("starts_at")) if iv else None
@@ -1041,7 +1071,7 @@ def application_detail(request: Request, app_id: int):
     return render(request, "application.html", check=check, a=a, fu=fu, drafting=drafting, applying=applying, next_id=(nxt or {}).get("id"),
                   review=review, receipt=receipt,
                   statuses=["queued", "ready", "needs_attention", "submitted", "screening", "assessment", "interview",
-                            "offer", "rejected", "withdrawn", "failed"])
+                            "offer", "rejected", "withdrawn", "stale", "failed"])
 
 
 def remember_answers(review: list[dict], edits: dict, remember: set[str]) -> int:
