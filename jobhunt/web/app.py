@@ -173,6 +173,18 @@ def _calbtn(when, inside_link: bool = False) -> Markup:
 
 templates.env.globals.update(calbtn=_calbtn, cal_icon=Markup(CAL_ICON))
 
+THEMES = [("groovy", "Groovy", "Warm 70s cream and brown", ["#F4ECDB", "#3A2A1E", "#2A7F7B", "#D9531E"]),
+          ("night", "Night City", "Neon yellow on black", ["#0A0A12", "#FCEE0A", "#27E6F2", "#FF2A6D"]),
+          ("pro", "Professional", "Clean white and blue, follows light or dark", ["#FFFFFF", "#1F2937", "#2563EB", "#C2410C"])]
+
+
+def _theme() -> str:
+    t = db.get_setting("theme", "")
+    return t if t in {x[0] for x in THEMES} else "groovy"
+
+
+templates.env.globals.update(theme=_theme, themes=THEMES)
+
 
 def render(request: Request, name: str, **ctx):
     ctx.update({"request": request, "running": tasks.running(), "now_iso": datetime.now(timezone.utc).isoformat(), "msg": request.query_params.get("msg", ""), "boot": BOOT_ID,
@@ -1953,6 +1965,14 @@ async def settings_save(request: Request):
                 continue  # keep existing secret when left blank
             db.set_setting(key, v)
     return back("/settings", "saved")
+
+
+@app.post("/settings/theme")
+async def settings_theme(request: Request):
+    t = str((await request.form()).get("theme", ""))
+    if t in {x[0] for x in THEMES}:
+        db.set_setting("theme", t)
+    return back("/settings", "Colors changed.")
 
 
 @app.post("/settings/suggest")

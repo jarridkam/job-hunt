@@ -8,6 +8,15 @@
   <form method="post" action="/settings/test_smtp" class="inline"><button class="small">Test sending (emails you)</button></form>
   <form method="post" action="/settings/suggest" class="inline"><button class="small">Suggest target titles from resume</button></form>
 </div>
+<div class="card" style="margin-bottom:14px"><h2>Colors</h2>
+  <form method="post" action="/settings/theme" class="theme-picks">
+    {% for id, name, note, sw in themes %}
+    <button name="theme" value="{{ id }}" class="theme-pick {{ 'on' if theme() == id }}" {% if theme() == id %}aria-pressed="true"{% endif %}>
+      <span class="swatch">{% for c in sw %}<i style="background:{{ c }}"></i>{% endfor %}</span>
+      {{ name }}<small>{{ note }}</small></button>
+    {% endfor %}
+  </form>
+</div>
 <form method="post" action="/settings">
 {% set groups = [('LLM', ['anthropic_api_key','model_main','model_fast']),
                  ('Search', ['search_titles','search_keywords','search_locations','remote_only','exclude_keywords','min_legit_score','min_fit_score','auto_queue_score','max_llm_scores_per_run','use_remote_boards','adzuna_country','adzuna_app_id','adzuna_app_key','jsearch_key']),
