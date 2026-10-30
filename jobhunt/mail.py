@@ -90,9 +90,9 @@ def reply_target(app_id: int) -> dict:
     for m in reversed(inbound(app_id)):
         if m.get("from_addr") and not NOREPLY.search(m["from_addr"]):
             subj = m.get("subject") or ""
-            return {"to": m["from_addr"], "subject": subj if subj.lower().startswith("re:") else f"Re: {subj}".strip(),
+            return {"to": email.utils.parseaddr(m["from_addr"])[1] or m["from_addr"], "subject": subj if subj.lower().startswith("re:") else f"Re: {subj}".strip(),
                     "in_reply_to": m.get("message_id") or "", "email_id": m["id"]}
-    return {"to": followup.contact(app_id), "subject": "", "in_reply_to": "", "email_id": None}
+    return {"to": email.utils.parseaddr(followup.contact(app_id))[1], "subject": "", "in_reply_to": "", "email_id": None}
 
 
 # ---- sending ---------------------------------------------------------------------
