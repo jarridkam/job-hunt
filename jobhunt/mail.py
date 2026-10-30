@@ -18,14 +18,19 @@ NOREPLY = re.compile(r"no-?reply|do-?not-?reply|notifications?@|mailer-daemon|po
 
 class ReplyDraft(BaseModel):
     subject: str = Field(description="Subject line. 'Re: ...' when replying to a message.")
-    body: str = Field(description="Plain-text email body, greeting to sign-off. Short: 3-8 sentences.")
+    body: str = Field(description="Plain-text email body, greeting to sign-off. Only what this reply needs, usually 2-5 sentences.")
 
 
 SYSTEM = """You draft replies for a job seeker's correspondence with recruiters and hiring teams.
-Write in the candidate's voice: plain, warm, specific, no filler, no buzzwords, no exclamation marks. Answer every
-question the last message asked. If they asked for availability, offer two or three concrete windows in the coming
-week (business hours, the candidate's local time) rather than 'anytime'. Never invent facts about the candidate;
-if something is unknown, say you will confirm. Sign with the candidate's first name. Plain text only."""
+Write in the candidate's voice: plain, warm, specific, no filler, no buzzwords, no exclamation marks.
+Stay on topic. Answer what the last message asked and do what it needs, and nothing else. As short as that allows.
+Do not bring up anything they didn't raise: no work location or remote preferences, no relocation, salary, skills or
+background, and no selling the candidate. A fact is for answering a question, not for filling space.
+If scheduling is the topic, offer two or three concrete windows in the coming week during business hours, and never
+during anything under ALREADY BOOKED. Check the day of the week against the date. Name the time zone in one plain
+word, like "Pacific", never "Daylight" or "Standard". If they asked for a call or scheduling, sign off with the
+candidate's full name and phone number; otherwise sign with their first name.
+Never invent facts about the candidate; if something is unknown, say you will confirm. Plain text only."""
 
 
 # ---- threads ---------------------------------------------------------------------
@@ -118,7 +123,8 @@ def _smtp():
 
 def send(app_id: int, to: str, subject: str, body: str, in_reply_to: str = "") -> int:
     """Send and record. Raises with a plain message on failure (nothing is recorded as sent then)."""
-    to, subject, body = to.strip(), subject.strip() or "(no subject)", body.strip()
+    to = email.utils.parseaddr(to)[1] or to.strip()    # a pasted "Name <address>" still sends
+    subject, body = subject.strip() or "(no subject)", body.strip()
     if not to or "@" not in to:
         raise RuntimeError("Who is this going to? Add an email address.")
     if not body:
@@ -169,6 +175,21 @@ def test_send() -> tuple[bool, str]:
 
 # ---- AI draft --------------------------------------------------------------------
 
+def _booked() -> list[str]:
+    """Interviews still ahead, in local time, so offered windows never clash with them."""
+    out = []
+    now = datetime.now(timezone.utc)
+    for x in db.q("SELECT company, starts_at, duration_minutes FROM interviews WHERE status='scheduled' AND starts_at IS NOT NULL ORDER BY starts_at"):
+        try:
+            at = datetime.fromisoformat(x["starts_at"].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+        if at > now:
+            out.append(f"- {at.astimezone().strftime('%A %B %d, %I:%M %p')} ({x['duration_minutes'] or 60} min, {x['company']})")
+    return out
+
+
 def draft(app_id: int, instruction: str = "") -> ReplyDraft:
     a = db.q1("SELECT * FROM applications WHERE id=?", (app_id,))
     if not a:
@@ -177,12 +198,17 @@ def draft(app_id: int, instruction: str = "") -> ReplyDraft:
     msgs = thread(app_id)[-8:]
     convo = "\n\n".join(f"[{m['direction'].upper()} · {m['who']} · {(m['at'] or '')[:16]}]\nSUBJECT: {m.get('subject') or ''}\n{(m['text'] or '')[:2500]}" for m in msgs)
     today = datetime.now().astimezone()
-    parts = [f"CANDIDATE: {cand.full_name} (first name {cand.first_name or '?'}), local time now {today.strftime('%A %B %d, %I:%M %p %Z')}",
+    zone = (today.tzname() or "").split(" ")[0]
+    parts = [f"CANDIDATE: {cand.full_name} (first name {cand.first_name or '?'}), phone {cand.phone or 'unknown'}",
+             f"NOW: {today.strftime('%A %B %d %Y, %I:%M %p')}. Candidate's time zone: {zone}.",
              f"COMPANY: {a.get('company')}", f"ROLE: {a.get('title')}", f"APPLICATION STATUS: {a.get('status')}"]
     if config.get("voice_notes"):
         parts.append(f"VOICE: {config.get('voice_notes')}")
     if config.get("cand_extra_answers"):
-        parts.append(f"FACTS ABOUT THE CANDIDATE:\n{config.get('cand_extra_answers')[:1500]}")
+        parts.append(f"FACTS ABOUT THE CANDIDATE (use only to answer a direct question):\n{config.get('cand_extra_answers')[:1500]}")
+    booked = _booked()
+    if booked:
+        parts.append("ALREADY BOOKED:\n" + "\n".join(booked))
     parts.append(f"CONVERSATION SO FAR (oldest first):\n{convo or '(none yet; this is a first message)'}")
     parts.append("INSTRUCTION: " + (instruction.strip() or "Reply to the last message from the company."))
     return llm.extract(SYSTEM, "\n\n".join(parts), ReplyDraft, model=config.get("model_main"), effort="low", max_tokens=1200, purpose="reply")

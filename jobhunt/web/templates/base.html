@@ -108,7 +108,7 @@
 (function () {
   window.jobhuntBusy = function () {
     var a = document.activeElement;
-    return document.body.classList.contains('sheet-open') || !!document.querySelector('form[data-dirty]') ||
+    return !!window.jobhuntSubmitting || document.body.classList.contains('sheet-open') || !!document.querySelector('form[data-dirty]') ||
       !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'checkbox');
   };
   function fieldDefault(el) {
@@ -235,8 +235,10 @@
       }
       // Disable buttons and show a spinner so double-clicks don't double-run. Deferred: disabling the clicked
       // button *during* the submit event makes browsers drop its name/value from the form data.
+      window.jobhuntSubmitting = true;   // don't reload out from under a request that's still going
       setTimeout(function () {
-        f.querySelectorAll('button').forEach(function (b) { b.disabled = true; b.classList.add('busy'); });
+        var pressed = e.submitter;
+        f.querySelectorAll('button').forEach(function (b) { b.disabled = true; if (b === pressed || !pressed) b.classList.add('busy'); });
       }, 0);
     });
   });
