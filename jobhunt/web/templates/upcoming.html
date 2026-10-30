@@ -12,7 +12,7 @@
     <div class="body"><div class="k">{{ c.kind }}</div><b>{{ c.company }}</b><span class="r">{{ c.what }}</span></div>
     <span class="tag {{ c.tone }}">{{ c.tag }}</span>
   </div>
-  {% if c.when and c.sort[0] != 9 %}<div class="when">{{ c.when }}</div>{% endif %}
+  {% if c.when and c.sort[0] != 9 %}<div class="when">{{ c.when }}{% if c.x.starts_at or c.x.due_at %} {{ calbtn(c.x.starts_at or c.x.due_at) }}{% endif %}</div>{% endif %}
   {% if c.flags or c.app_id %}<div class="flags">
     {% for t, f in c.flags %}<span class="{{ 'warn-text' if t == 'warn' }}">{{ f }}</span>{% endfor %}
     {% if c.app_id %}<a href="/applications/{{ c.app_id }}">{{ c.app_title or 'The application' }}</a>{% endif %}

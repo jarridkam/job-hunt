@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendar – jobhunt</title>
+<link rel="icon" href="/static/icons/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/style.css?v={{ boot }}">
+</head>
+<body class="calwin">
+<header class="cal-head">
+  <a class="iconbtn" href="/cal?d={{ prev_month }}{{ '&embed=1' if embed }}" aria-label="Previous month"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></a>
+  <h1>{{ month_name }}</h1>
+  <a class="iconbtn" href="/cal?d={{ next_month }}{{ '&embed=1' if embed }}" aria-label="Next month"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+  <span class="spacer"></span>
+  <button type="button" class="iconbtn" id="cal-close" aria-label="Close calendar" title="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</header>
+
+<div class="cal-grid" role="grid" aria-label="{{ month_name }}">
+  {% for w in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] %}<div class="cal-dow" role="columnheader">{{ w }}</div>{% endfor %}
+  {% for c in cells %}
+  <a role="gridcell" href="/cal?d={{ c.iso }}{{ '&embed=1' if embed }}" aria-label="{{ c.label }}" {% if c.selected %}aria-selected="true"{% endif %}
+     class="cal-day{{ ' out' if c.out }}{{ ' today' if c.today }}{{ ' sel' if c.selected }}"><span>{{ c.n }}</span>
+    <i class="dots">{% for t in c.dots %}<u class="{{ t }}"></u>{% endfor %}</i></a>
+  {% endfor %}
+</div>
+
+<section class="cal-list">
+  <h2>{{ day_title }}</h2>
+  {% for e in day_events %}
+  <a class="cal-ev {{ 'dim' if e.done }}" href="{{ e.href }}" data-main>
+    <span class="tm">{{ e.time }}</span>
+    <span class="b"><b>{{ e.company or e.what }}</b>{% if e.company %}<span>{{ e.what }}</span>{% endif %}</span>
+    <i class="kind {{ e.kind }}">{{ e.label }}</i></a>
+  {% else %}
+  <p class="muted small">Nothing on this day.</p>
+  {% endfor %}
+
+  {% if next_up %}
+  <h2>Coming up</h2>
+  {% for e in next_up %}
+  <a class="cal-ev" href="{{ e.href }}" data-main>
+    <span class="tm">{{ e.date }}</span>
+    <span class="b"><b>{{ e.company or e.what }}</b>{% if e.company %}<span>{{ e.what }}</span>{% endif %}</span>
+    <i class="kind {{ e.kind }}">{{ e.label }}</i></a>
+  {% endfor %}
+  {% endif %}
+
+  {% if undated %}
+  <h2>No date yet</h2>
+  {% for e in undated %}
+  <a class="cal-ev" href="{{ e.href }}" data-main>
+    <span class="b"><b>{{ e.company or e.what }}</b><span>{{ e.what }}</span></span>
+    <i class="kind {{ e.kind }}">{{ e.label }}</i></a>
+  {% endfor %}
+  {% endif %}
+</section>
+
+<script>
+(function () {
+  var embedded = window.parent !== window;
+  function close() {
+    if (embedded) window.parent.postMessage('jobhunt-cal-close', location.origin);
+    else window.close();
+  }
+  document.getElementById('cal-close').addEventListener('click', close);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  // Opening an item shows it in the main window and leaves this one where it is.
+  document.querySelectorAll('[data-main]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      var main = embedded ? window.parent : window.opener;
+      if (!main || main.closed) return;
+      e.preventDefault();
+      main.location.href = a.getAttribute('href');
+      if (embedded) close(); else main.focus();
+    });
+  });
+})();
+</script>
+</body>
+</html>

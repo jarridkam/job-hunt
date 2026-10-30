@@ -1,6 +1,7 @@
 """Web UI (FastAPI + Jinja2). Binds to 127.0.0.1; reachable remotely only through a tunnel, behind auth.py's login."""
 from __future__ import annotations
 
+import calendar as month_grid
 import hmac
 import re
 import uuid
@@ -152,6 +153,25 @@ templates.env.filters["localtz"] = lambda s: (deadlines.tz_label(deadlines.to_lo
 def _email_window() -> dict:
     last = email_tracker.last_sync_at()
     return {"days": email_tracker.default_days(), "last": last.isoformat() if last else ""}
+
+
+CAL_ICON = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+            '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>')
+
+
+def _calbtn(when, inside_link: bool = False) -> Markup:
+    """The little calendar button that sits beside a date. Inside a link it has to be a span, since a link can't hold a button."""
+    at = deadlines.to_local(when.isoformat() if isinstance(when, datetime) else when)
+    if not at:
+        return Markup("")
+    d = at.strftime("%Y-%m-%d")
+    label = "See " + at.strftime("%B ") + str(at.day) + " on the calendar"
+    if inside_link:
+        return Markup(f'<span class="calbtn" role="button" tabindex="0" data-cal="{d}" aria-label="{label}" title="{label}">{CAL_ICON}</span>')
+    return Markup(f'<button type="button" class="calbtn" data-cal="{d}" aria-label="{label}" title="{label}">{CAL_ICON}</button>')
+
+
+templates.env.globals.update(calbtn=_calbtn, cal_icon=Markup(CAL_ICON))
 
 
 def render(request: Request, name: str, **ctx):
@@ -396,7 +416,7 @@ def _hero_from_due(d: dict, now: datetime) -> dict:
          "who": d["company"], "what": d["what"], "minutes": "", "word": False, "bar": None,
          "label": d["action"], "href": d["href"], "open_new": d["open_new"], "urgent": True,
          "done_url": d.get("done_url"), "done_value": d.get("done_value"), "details": d.get("details"),
-         "prep": d.get("prep"), "prep_ready": d.get("prep_ready"), "flag": (d.get("flags") or [""])[0]}
+         "prep": d.get("prep"), "prep_ready": d.get("prep_ready"), "flag": (d.get("flags") or [""])[0], "cal": d.get("real_at")}
     if "About " in (d.get("detail") or ""):
         h["minutes"] = d["detail"].split(".")[0].replace("About ", "about ")
     if at is None:
@@ -467,7 +487,7 @@ def today_plan(due: list[dict], needs: list[dict], setup_min: int, match_count: 
             continue
         at = d.get("at")
         loc = at.astimezone() if at else None
-        rows.append({"tile": "date" if loc else "warm", "d": loc.strftime("%a") if loc else "", "n": loc.day if loc else "",
+        rows.append({"cal": d.get("real_at"), "tile": "date" if loc else "warm", "d": loc.strftime("%a") if loc else "", "n": loc.day if loc else "",
                      "icon": "" if loc else "clock", "t": f"{d['company']} · {d['what']}".strip(" ·"),
                      "s": f"{d['big']} · {d['sub']}".strip(" ·") if d["big"] not in ("Today", "Tomorrow") or not d["sub"] else f"{d['big']}, {d['sub']}",
                      "href": d.get("details") or "/upcoming"})
@@ -1576,6 +1596,57 @@ def push_test():
         err = config.get("notify_webhook_error") or ""
         bits.append("nothing went out. Turn on alerts on your phone first, or set a webhook." + (f" Webhook error: {err}" if err else ""))
     return back("/settings", "; ".join(bits))
+
+
+def _cal_events() -> tuple[list[dict], list[dict]]:
+    """Every test and interview: (dated, not dated yet). Times are local."""
+    dated, undated = [], []
+    for x in db.q("SELECT * FROM interviews WHERE status IN ('needs_scheduling','scheduled','done')"):
+        e = {"kind": "iv", "label": "Interview", "company": x.get("company") or "", "what": x.get("stage") or "Interview",
+             "href": f"/upcoming#i-{x['id']}", "done": x["status"] == "done"}
+        at = deadlines.to_local(x.get("starts_at"))
+        if at:
+            dated.append({**e, "at": at, "time": at.strftime("%I:%M %p").lstrip("0")})
+        else:
+            undated.append(e)
+    for x in db.q("SELECT * FROM assessments WHERE status IN ('pending','completed','missed')"):
+        e = {"kind": "test", "label": "Test due", "company": x.get("company") or "", "what": x.get("title") or x.get("platform") or "Test",
+             "href": f"/upcoming#a-{x['id']}", "done": x["status"] != "pending"}
+        at = deadlines.to_local(x.get("due_at"))
+        if at:
+            dated.append({**e, "at": at, "time": at.strftime("%I:%M %p").lstrip("0")})
+        elif x["status"] == "pending":
+            undated.append(e)
+    dated.sort(key=lambda e: e["at"])
+    return dated, undated
+
+
+@app.get("/cal", response_class=HTMLResponse)
+def cal_window(request: Request, d: str = "", embed: int = 0):
+    """The small calendar window. It has no menus, so there's nothing in it to wander off into."""
+    now = datetime.now().astimezone()
+    today_d = now.date()
+    try:
+        day = datetime.strptime(d, "%Y-%m-%d").date()
+    except ValueError:
+        day = today_d
+    dated, undated = _cal_events()
+    by_day: dict = {}
+    for e in dated:
+        by_day.setdefault(e["at"].date(), []).append(e)
+    cells = []
+    for w in month_grid.Calendar(firstweekday=6).monthdatescalendar(day.year, day.month):
+        for x in w:
+            kinds = [e["kind"] + (" done" if e["done"] else "") for e in by_day.get(x, [])]
+            cells.append({"iso": x.isoformat(), "n": x.day, "out": x.month != day.month, "today": x == today_d, "selected": x == day,
+                          "dots": kinds[:3], "label": x.strftime("%A %B ") + str(x.day) + (f", {len(kinds)} item{'s' if len(kinds) != 1 else ''}" if kinds else "")})
+    first = day.replace(day=1)
+    prev_m = first - timedelta(days=1)
+    next_m = first + timedelta(days=32)
+    title = "Today" if day == today_d else "Tomorrow" if day == today_d + timedelta(days=1) else day.strftime("%A, %B ") + str(day.day)
+    ahead = [{**e, "date": e["at"].strftime("%b ") + str(e["at"].day)} for e in dated if not e["done"] and e["at"] >= now and e["at"].date() != day][:4]
+    return render(request, "cal.html", embed=embed, month_name=day.strftime("%B %Y"), cells=cells, day_title=title, day_events=by_day.get(day, []),
+                  next_up=ahead, undated=undated, prev_month=prev_m.replace(day=1).isoformat(), next_month=next_m.replace(day=1).isoformat())
 
 
 @app.get("/calendar.ics")

@@ -60,6 +60,7 @@
   <div class="acts">
     <a href="/capture" class="iconbtn {{ 'on' if here.startswith('/capture') }}" aria-label="Add a job or a message" title="Add a job or a message">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
+    <button type="button" class="iconbtn" data-cal="" aria-label="Open calendar" title="Calendar">{{ cal_icon }}</button>
     <a href="/settings" class="iconbtn {{ 'on' if t_settings }}" aria-label="Settings" title="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
   </div>
@@ -300,6 +301,40 @@
     });
   }
   tick(); setInterval(tick, 2000);
+})();
+</script>
+<script>
+// Calendar: a separate small window on a computer, a panel over the page on a phone. Either way your page stays as it was.
+(function () {
+  var panel = null;
+  function closePanel() { if (panel) { panel.remove(); panel = null; } }
+  function open(day) {
+    var url = '/cal' + (day ? '?d=' + day : '');
+    if (window.innerWidth >= 760) {
+      var w = 430, h = 700, left = (window.screenX || 0) + Math.max(0, window.outerWidth - w - 24), top = (window.screenY || 0) + 70;
+      var win = window.open(url, 'jobhunt-calendar', 'popup=yes,width=' + w + ',height=' + h + ',left=' + left + ',top=' + top);
+      if (win) { win.focus(); return; }   // a blocked popup falls through to the panel
+    }
+    closePanel();
+    panel = document.createElement('div');
+    panel.className = 'cal-panel';
+    panel.innerHTML = '<iframe title="Calendar"></iframe>';
+    panel.firstChild.src = url + (day ? '&' : '?') + 'embed=1';
+    panel.addEventListener('click', function (e) { if (e.target === panel) closePanel(); });
+    document.body.appendChild(panel);
+  }
+  function fire(e) {
+    var b = e.target.closest && e.target.closest('[data-cal]');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    open(b.getAttribute('data-cal'));
+  }
+  document.addEventListener('click', fire, true);
+  document.addEventListener('keydown', function (e) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('span[data-cal]')) fire(e);
+    if (e.key === 'Escape') closePanel();
+  });
+  window.addEventListener('message', function (e) { if (e.origin === location.origin && e.data === 'jobhunt-cal-close') closePanel(); });
 })();
 </script>
 <script src="/static/push.js?v={{ boot }}" defer></script>

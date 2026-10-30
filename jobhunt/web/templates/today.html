@@ -19,7 +19,7 @@
 </div>
 
 <div class="hero {{ 'calm' if hero.calm }}">
-  <div class="eyebrow-row"><span class="kind">{{ hero.kind }}</span>{% if hero.minutes %}<span class="meta">{{ hero.minutes }}</span>{% endif %}</div>
+  <div class="eyebrow-row"><span class="kind">{{ hero.kind }}</span>{% if hero.minutes %}<span class="meta">{{ hero.minutes }}</span>{% endif %}{% if hero.cal %}{{ calbtn(hero.cal) }}{% endif %}</div>
   <div>
     {% if hero.who %}<div class="who">{{ hero.who }}</div>{% endif %}
     <div class="what">{{ hero.what }}</div>
@@ -58,7 +58,7 @@
     <a class="rowlink" href="{{ r.href }}" {% if r.href.startswith('http') %}target="_blank" rel="noopener"{% endif %}>
       <div class="tile {{ r.tile }}">{% if r.d %}<span class="d">{{ r.d }}</span><span class="n">{{ r.n }}</span>{% else %}{{ icon(r.icon) }}{% endif %}</div>
       <div class="body"><div class="t">{{ r.t }}</div>{% if r.s %}<div class="s">{{ r.s }}</div>{% endif %}</div>
-      {% if r.go %}<span class="go">{{ r.go }}</span>{% else %}{{ chev }}{% endif %}
+      {% if r.cal %}{{ calbtn(r.cal, true) }}{% endif %}{% if r.go %}<span class="go">{{ r.go }}</span>{% else %}{{ chev }}{% endif %}
     </a>
     {% endif %}
   {% endfor %}

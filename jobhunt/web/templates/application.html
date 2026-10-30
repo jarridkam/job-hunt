@@ -123,7 +123,7 @@
   {% for x in open_tests %}<a class="rowlink" href="{{ ('/assessments/' ~ x.id ~ '/open') if x.link else '/upcoming#assessments' }}" {% if x.link %}target="_blank" rel="noopener"{% endif %}>
     <div class="tile warm"><span class="d">Test</span></div>
     <div class="body"><div class="t">{{ x.platform or '' }} {{ x.title }}</div><div class="s">{% if x.due_at %}Due {{ x.due_at|dt('%a %b %d, %I:%M %p') }}{% else %}No deadline given{% endif %}{% if x.est_minutes %} · about {{ x.est_minutes }} min{% endif %}</div></div>
-    <span class="go">{{ 'Open' if x.link else 'Details' }}</span></a>{% endfor %}
+    {% if x.due_at %}{{ calbtn(x.due_at, true) }}{% endif %}<span class="go">{{ 'Open' if x.link else 'Details' }}</span></a>{% endfor %}
   {% for x in open_ivs %}<a class="rowlink" href="/upcoming#interviews">
     <div class="tile date">{% if x.starts_at %}<span class="d">{{ x.starts_at|dt('%a') }}</span><span class="n">{{ x.starts_at|dt('%d')|int }}</span>{% else %}<span class="d">?</span>{% endif %}</div>
     <div class="body"><div class="t">{{ x.stage or 'Interview' }}{% if x.interviewer %} with {{ x.interviewer }}{% endif %}</div><div class="s">{% if x.starts_at %}{{ x.starts_at|dt('%I:%M %p') }} {{ x.starts_at|localtz }}{% else %}Time not set yet. Pick one.{% endif %}</div></div>

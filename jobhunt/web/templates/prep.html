@@ -5,7 +5,7 @@
   <div class="small muted"><a href="/upcoming#interviews">← Upcoming</a></div>
   <h1>{{ x.company }} <span class="muted">· {{ x.stage or 'Interview' }}</span></h1>
   <div class="row small" style="gap:12px; margin-bottom:12px">
-    {% if x.starts_at %}<b>{{ x.starts_at|dt }}</b> <span class="muted">{{ x.starts_at|localtz }} · {{ x.starts_at|rel }}</span>{% else %}<span class="warn-text">time not set</span>{% endif %}
+    {% if x.starts_at %}<b>{{ x.starts_at|dt }}</b> <span class="muted">{{ x.starts_at|localtz }} · {{ x.starts_at|rel }}</span> {{ calbtn(x.starts_at) }}{% else %}<span class="warn-text">time not set</span>{% endif %}
     {% if x.format %}<span class="pill">{{ iv_format(x.format) }}</span>{% endif %}
     {% if x.interviewer %}<span>with {{ x.interviewer }}</span>{% endif %}
     {% if x.link %}<a class="btn small primary" href="{{ x.link }}" target="_blank" rel="noopener">Join</a>{% endif %}
