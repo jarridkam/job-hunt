@@ -1,5 +1,6 @@
 # jobhunt server image: the web app plus a real (headed) Chromium on a virtual display,
-# shared over VNC to the in-page take-over view. Playwright's image pins browser + OS deps.
+# shared over VNC to the in-page take-over view. Playwright's image pins browser + OS deps and is multi-arch,
+# so the same file builds on x86 (Hetzner) and ARM (Oracle Cloud's free Ampere servers).
 FROM mcr.microsoft.com/playwright/python:v1.64.1-noble
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 \
