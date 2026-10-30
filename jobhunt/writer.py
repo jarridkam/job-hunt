@@ -42,7 +42,7 @@ def draft(job: dict, instruction: str = "", previous: str = "") -> str:
     fit_points = db.loads(job.get("fit_reasons"), [])
     missing = db.loads(job.get("fit_missing"), [])
     user = [f"CANDIDATE PROFILE:\n{cand.as_prompt()}", f"RESUME:\n{r['content']}"]
-    projects = work.block(16000)
+    projects = work.block()
     if projects:
         user.append(projects)
     if cand.voice_notes.strip():

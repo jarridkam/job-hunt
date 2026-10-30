@@ -221,7 +221,7 @@ def drafts() -> list[dict]:
     return db.q("SELECT * FROM documents WHERE kind='work' AND status='draft' ORDER BY created_at DESC")
 
 
-def block(limit_chars: int = 8000) -> str:
+def block(limit_chars: int = 30000) -> str:
     """The candidate's checked projects, for prompts. Empty when there are none."""
     rows = active()
     if not rows:
