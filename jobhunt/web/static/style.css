@@ -467,3 +467,14 @@ table tr > td:last-child { border-radius: 0 12px 12px 0; }
 .work-card textarea.work-facts { min-height: 220px; font-size: 15px; line-height: 1.5; }
 .work-card .work-text { white-space: pre-wrap; font-size: 15px; line-height: 1.5; margin: 10px 0 6px; }
 .flash.bad { background: var(--bad-soft); color: var(--bad); }
+
+/* Messages on desktop: full-width two-pane mail view. The thread fills the window and scrolls as one,
+   so long emails don't get a second scrollbar inside the bubble. */
+@media (min-width: 761px) {
+  .msgs { grid-template-columns: minmax(300px, 380px) 1fr; gap: 22px; }
+  .msgs-thread { position: sticky; top: 84px; height: calc(100vh - 110px); min-height: 0; }
+  .msgs-scroll { max-height: none; min-height: 0; padding: 20px 24px; }
+  .msgs-list { max-height: calc(100vh - 110px); overflow: auto; padding: 2px 4px 2px 2px; }
+  .bubble { max-width: min(78%, 760px); }
+  .bubble-text { max-height: none; overflow: visible; line-height: 1.55; }
+}
