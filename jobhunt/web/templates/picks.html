@@ -56,6 +56,7 @@
 <div class="card empty">
   <b>No new picks yet.</b>
   {% if finding %}Looking for jobs now. They show up here as they're scored.
+  {% elif can_find and near.n %}jobhunt checked {{ near.n }} job{{ 's' if near.n != 1 }} and none reached your bar of {{ min_fit }}. The closest scored {{ near.best }}. Adding your projects under <a href="/documents#work">Your work</a> can lift them, and you can change the bar in <a href="/settings">Settings</a>.
   {% elif can_find %}jobhunt looks for jobs matching your target titles and scores each one against your resume.
   <form method="post" action="/run/fetch_and_score" style="margin-top:16px"><button class="primary">Find new jobs</button></form>
   {% else %}Add your target job titles and resume first, so jobhunt knows what to look for.

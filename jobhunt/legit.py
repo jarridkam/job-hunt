@@ -52,6 +52,8 @@ def score(job: dict) -> tuple[int, list[str]]:
     company = (job.get("company") or "").strip()
 
     ats = detect_ats(job.get("apply_url")) or detect_ats(job.get("url"))
+    if not ats and job.get("source") in ("greenhouse", "lever", "ashby", "workable"):
+        ats = (job["source"], "")   # came straight from its API; big companies link these from their own domain
     if ats:
         s += 25
         why.append(f"+25 hosted on {ats[0]}")

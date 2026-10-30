@@ -936,6 +936,7 @@ def picks(request: Request, more: int = 0):
     return render(request, "picks.html", card=card, done_n=done_n, total=total, yes=yes, no=done_n - yes,
                   extra=len(pool) - left_today, more=more, next_url=next_url, first_ready=first_ready,
                   finding=tasks.is_running("fetch_and_score") or tasks.is_running("fetch") or tasks.is_running("score"),
+                  near=db.q1("SELECT COUNT(*) n, MAX(fit_score) best FROM jobs WHERE status='low_fit' AND fit_score > 0"), min_fit=min_fit,
                   can_find=bool(config.get("anthropic_api_key") and config.get_lines("search_titles")))
 
 
