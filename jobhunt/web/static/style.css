@@ -391,8 +391,12 @@ iframe.vnc { width: 100%; height: calc(100vh - 190px); min-height: 420px; border
 .bubble.out .muted { color: rgba(255,255,255,.75); }
 .bubble-subj { font-weight: 600; margin: 2px 0; }
 .bubble-text { white-space: pre-wrap; word-break: break-word; font-size: 15px; max-height: 420px; overflow: auto; }
-.compose { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
-.compose textarea { min-height: 120px; }
+.compose { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.compose textarea { min-height: 80px; height: 120px; resize: none; }
+.compose-grip { position: relative; flex: none; height: 14px; margin-bottom: -7px; z-index: 1; cursor: ns-resize; touch-action: none; border-top: 1px solid var(--line); }
+.compose-grip::after { content: ""; position: absolute; left: 50%; top: 4px; width: 44px; height: 5px; margin-left: -22px; border-radius: 3px; background: var(--line); }
+.compose-grip:hover::after, .compose-grip:focus-visible::after, .compose-grip.on::after { background: var(--accent); }
+.compose-grip:focus { outline: none; }
 @media (max-width: 860px) {
   .msgs { grid-template-columns: 1fr; } .msgs.has-thread .msgs-list { display: none; }
   .msgs-back { display: inline; } .msgs-thread { min-height: 0; } .msgs-scroll { max-height: 50vh; } .bubble { max-width: 92%; }

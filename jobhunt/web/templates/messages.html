@@ -33,6 +33,7 @@
     {% endfor %}
     {% if not msgs %}<div class="muted small">No messages on this application yet.</div>{% endif %}
   </div>
+  <div class="compose-grip" id="compose-grip" role="separator" aria-orientation="horizontal" aria-label="Drag to resize the reply box" title="Drag to resize. Double-click to reset." tabindex="0"></div>
   <form method="post" action="/messages/{{ cur.id }}/send" class="compose" id="compose">
     <div class="row small">
       <input type="email" name="to" value="{{ target.to }}" placeholder="to@company.com" required style="flex:1">
@@ -55,12 +56,57 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// Drag the bar above the reply box to trade space between the email and your reply. The size is remembered.
+function sizer(scroll, box, grip) {
+  var key = 'jobhunt.compose.height', KEEP = 96, MIN = 80;
+  var narrow = function () { return window.innerWidth < 761; };   // the phone layout has no fixed height to share
+  function set(h) {
+    var room = narrow() ? window.innerHeight * .8 : scroll.offsetHeight + box.offsetHeight;
+    h = Math.round(Math.max(MIN, Math.min(h, room - KEEP)));
+    var was = box.offsetHeight;
+    box.style.height = h + 'px';
+    if (narrow()) scroll.style.maxHeight = (room - h) + 'px';
+    scroll.scrollTop += h - was;   // keep the newest message in view
+    grip.setAttribute('aria-valuenow', h);
+    return h;
+  }
+  function save(h) { try { localStorage.setItem(key, h); } catch (err) {} }
+  function saved() { try { return parseInt(localStorage.getItem(key), 10); } catch (err) { return 0; } }
+  if (saved()) set(saved());
+  window.addEventListener('resize', function () { if (box.style.height) set(box.offsetHeight); });
+  var startY, startH;
+  grip.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    startY = e.clientY; startH = box.offsetHeight;
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('on');
+  });
+  grip.addEventListener('pointermove', function (e) {
+    if (grip.classList.contains('on')) set(startH + startY - e.clientY);
+  });
+  function drop() {
+    if (!grip.classList.contains('on')) return;
+    grip.classList.remove('on');
+    save(box.offsetHeight);
+  }
+  grip.addEventListener('pointerup', drop);
+  grip.addEventListener('pointercancel', drop);
+  grip.addEventListener('dblclick', function () {
+    box.style.height = ''; scroll.style.maxHeight = '';
+    try { localStorage.removeItem(key); } catch (err) {}
+  });
+  grip.addEventListener('keydown', function (e) {
+    var step = e.key === 'ArrowUp' ? 32 : e.key === 'ArrowDown' ? -32 : 0;
+    if (step) { e.preventDefault(); save(set(box.offsetHeight + step)); }
+  });
+}
 (function () {
   var s = document.getElementById('msgs-scroll'); if (s) s.scrollTop = s.scrollHeight;
   var f = document.getElementById('compose'); if (!f) return;
   f.addEventListener('submit', function (e) {
     var b = e.submitter; if (b) { b.disabled = true; b.textContent = b.classList.contains('primary') ? 'Sending…' : 'Drafting…'; }
   });
+  sizer(s, document.getElementById('compose-body'), document.getElementById('compose-grip'));
   try { var k = 'jobhunt.compose.' + location.pathname, t = document.getElementById('compose-body');
     if (t && !t.value) t.value = localStorage.getItem(k) || '';
     t && t.addEventListener('input', function () { localStorage.setItem(k, t.value); });
