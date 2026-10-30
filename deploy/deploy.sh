@@ -8,7 +8,8 @@ KEY="${JOBHUNT_SSH_KEY:-$HOME/.ssh/jobhunt_hetzner}"
 SSH="ssh -i $KEY -o StrictHostKeyChecking=accept-new"
 cd "$(dirname "$0")/.."
 
-tar czf - --exclude=.venv --exclude=data --exclude='__pycache__' --exclude=deploy/.env . \
+tar czf - --exclude=.venv --exclude=data --exclude='__pycache__' --exclude=deploy/.env --exclude=.git --exclude=.claude \
+  --exclude=reports --exclude=research_notes --exclude='*.log' --exclude='.env*' --exclude='*.pem' --exclude='*.key' . \
   | $SSH "$HOST" 'mkdir -p /opt/jobhunt/app && tar xzf - -C /opt/jobhunt/app'
 
 if [ "${2:-}" = "--data" ]; then
