@@ -50,6 +50,7 @@ class ApplyResult:
     def __init__(self):
         self.log: list[str] = []
         self.unresolved: list[str] = []
+        self.no_form = False
         self.submitted = False
         self.cancelled = False
         self.screenshot: str | None = None
@@ -70,13 +71,16 @@ class ApplyResult:
 def _apply_url(job: dict) -> str:
     url = job.get("apply_url") or job.get("url") or ""
     d = detect_ats(url) or detect_ats(job.get("url"))
+    if not d and job.get("source") == "greenhouse":
+        # Big companies link these from their own careers site; the id still says which Greenhouse board it is.
+        d = ("greenhouse", str(job.get("external_id", "")).split(":")[0])
     ats = d[0] if d else (job.get("ats") or "")
     if ats == "greenhouse" and d:
         # The embed form URL renders the application directly, even when the company
         # redirects its job page to its own careers site.
         m = re.search(r"/jobs/(\d+)|gh_jid=(\d+)|token=(\d+)", url + " " + (job.get("url") or ""))
         gh_id = next((g for g in (m.groups() if m else ()) if g), None)
-        if not gh_id and job.get("source") == "greenhouse":
+        if job.get("source") == "greenhouse":
             gh_id = str(job.get("external_id", "")).split(":")[-1]
         if gh_id:
             return f"https://job-boards.greenhouse.io/embed/job_app?for={d[1]}&token={gh_id}"
@@ -622,7 +626,8 @@ def apply_to(app_id: int, run_id: int | None = None, handoff_minutes: int = 20) 
                 frame = _best_frame(page)
             if not frame.locator("input, textarea, select").first.count():
                 res.add("no form found on this page")
-                res.unresolved.append("no application form detected (external site?)")
+                res.unresolved.append("jobhunt couldn't find the application form on that page. Open the posting and apply there")
+                res.no_form = True
             else:
                 if frame != page.main_frame:
                     res.add(f"form is inside iframe {frame.url[:80]}")
@@ -648,7 +653,7 @@ def apply_to(app_id: int, run_id: int | None = None, handoff_minutes: int = 20) 
                     res.add("review " + ("timed out" if act == "timeout" else "ended: browser closed"))
             elif res.unresolved:
                 res.add("unresolved: " + "; ".join(res.unresolved))
-                if not headless:
+                if not headless and not res.no_form:   # with no form there's nothing to finish, so don't sit on "applying"
                     res.submitted = _wait_for_user(page, handoff_minutes, res)
             elif auto:
                 res.submitted = _submit(page, frame, res)
@@ -679,7 +684,7 @@ def apply_to(app_id: int, run_id: int | None = None, handoff_minutes: int = 20) 
     elif res.cancelled:
         queue.set_status(app_id, "ready", "Cancelled before sending. Nothing was submitted.", source="manual")
     elif res.unresolved:
-        queue.set_status(app_id, "needs_attention", "Unresolved: " + "; ".join(res.unresolved)[:300], source="system")
+        queue.set_status(app_id, "needs_attention", ("" if res.no_form else "Unresolved: ") + "; ".join(res.unresolved)[:300], source="system")
     else:
         queue.set_status(app_id, "needs_attention", "Submission not confirmed. Check the screenshot/log.", source="system")
     if run_id:
