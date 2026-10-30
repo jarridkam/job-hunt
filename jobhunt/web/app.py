@@ -1835,6 +1835,12 @@ def company_add(name: str = Form(""), url_or_token: str = Form(...), ats: str = 
     return back("/companies", "added" if cid else "could not detect ATS from that URL. Paste a job link from the company's careers site, or choose the ATS and give its board token.")
 
 
+@app.post("/boards/add")
+def board_add(url: str = Form(...), name: str = Form("")):
+    _, msg = pipeline.add_board(url, name)
+    return back("/companies", msg)
+
+
 @app.post("/companies/seed")
 def company_seed():
     return back("/companies", f"added {pipeline.seed_starters()} starter boards (tokens validate on first fetch)")

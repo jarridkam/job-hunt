@@ -55,6 +55,9 @@ def score(job: dict) -> tuple[int, list[str]]:
     if ats:
         s += 25
         why.append(f"+25 hosted on {ats[0]}")
+    elif job.get("source") == "board":
+        s += 20
+        why.append("+20 from a job board you trust")
     elif job.get("source") in ("remotive", "weworkremotely", "remoteok"):
         s += 8
         why.append("+8 curated remote board")

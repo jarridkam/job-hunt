@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
+from urllib.parse import urljoin, urlparse
 
 from . import config, db, legit
 from .sources.aggregators import AGGREGATORS, REMOTE_BOARDS
 from .sources.base import Job, SourceContext, detect_ats, make_http
-from .sources.boards import FETCHERS
+from .sources.boards import FETCHERS, _feed_items
 
 # Optional starter boards. Tokens are validated on first fetch; a wrong one just records an error.
 STARTER_BOARDS = [
@@ -42,6 +44,64 @@ def add_company_from_url(url: str, name: str = "") -> int | None:
     if not d:
         return None
     return add_company(name or d[1], d[0], d[1])
+
+
+CLOSED_BOARDS = {"indeed.com": "Indeed", "linkedin.com": "LinkedIn", "glassdoor.com": "Glassdoor", "ziprecruiter.com": "ZipRecruiter", "monster.com": "Monster"}
+FEED_PATHS = ("/careers/rss.xml", "/jobs/rss.xml", "/rss.xml", "/feed.xml", "/jobs.rss", "/remote-jobs.rss", "/feed", "/rss", "/jobs/feed", "/feed/job_feed")
+FEED_LINK = re.compile(r"<(?:link|a)\b[^>]*>", re.I)
+
+
+def _is_feed(http, url: str) -> bool:
+    try:
+        r = http.get(url)
+        return r.status_code == 200 and bool(_feed_items(r.text))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def find_feed(url: str) -> str | None:
+    """The job feed behind a board's address: the link itself, one the page points to, or a usual place for one."""
+    http = make_http()
+    try:
+        if _is_feed(http, url):
+            return url
+        try:
+            page = http.get(url).text
+        except Exception:  # noqa: BLE001
+            page = ""
+        tags = [t for t in FEED_LINK.findall(page) if re.search(r"rss|atom|feed", t, re.I)]
+        hrefs = [m.group(1) for t in tags for m in [re.search(r'href=["\']([^"\']+)', t)] if m]
+        for href in dict.fromkeys(urljoin(url, h) for h in hrefs):
+            if _is_feed(http, href):
+                return href
+        for path in FEED_PATHS:
+            if _is_feed(http, urljoin(url, path)):
+                return urljoin(url, path)
+        return None
+    finally:
+        http.close()
+
+
+def add_board(url: str, name: str = "") -> tuple[int | None, str]:
+    """Add a job board by its address. Returns (id, what to tell the user)."""
+    url = url.strip()
+    url = url if "://" in url else "https://" + url
+    host = (urlparse(url).hostname or "").lower().removeprefix("www.")
+    if urlparse(url).scheme not in ("http", "https") or not host:
+        return None, "That doesn't look like a web address."
+    if detect_ats(url):
+        return add_company_from_url(url, name), "That's one company's careers page, so it went under Companies."
+    for dom, label in CLOSED_BOARDS.items():
+        if host == dom or host.endswith("." + dom):
+            return None, f"{label} blocks outside tools, so it can't be added here. A JSearch key in Settings brings in most of its listings."
+    feed = find_feed(url)
+    if not feed:
+        return None, f"{host} doesn't publish a job feed that jobhunt can read, so it can't be added yet."
+    if not name:
+        http = make_http()
+        name = (ET.fromstring(http.get(feed).text.lstrip()).findtext("channel/title") or host.split(".")[0].capitalize()).strip()[:60]
+        http.close()
+    return add_company(name, "feed", feed), "Added. Its jobs show up after the next search."
 
 
 def seed_starters() -> int:

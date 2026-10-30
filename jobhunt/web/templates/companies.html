@@ -1,28 +1,47 @@
 {% extends "base.html" %}
-{% block body %}
-<h1>Company boards</h1>
-<p class="small muted">Companies whose careers pages run on Greenhouse, Lever, Ashby, or Workable. Their public job APIs are fetched directly: no scraping, no login, and auto-apply works best on these forms. Boards are also discovered automatically when aggregator results link to one.</p>
-<div class="grid">
-  <form method="post" action="/companies/add" class="card">
-    <h2>Add a company</h2>
-    <label>Paste any job link from their careers site</label><input type="text" name="url_or_token" placeholder="https://boards.greenhouse.io/acme/jobs/123  or  https://jobs.lever.co/acme/..." required>
-    <label>Company name (optional)</label><input type="text" name="name">
-    <label>ATS</label><select name="ats"><option value="auto">detect from link</option><option value="greenhouse">greenhouse (give board token)</option><option value="lever">lever</option><option value="ashby">ashby</option><option value="workable">workable</option></select>
-    <button class="primary" style="margin-top:10px">Add</button>
-  </form>
-  <form method="post" action="/companies/seed" class="card">
-    <h2>Starter list</h2>
-    <p class="small">Adds ~25 well-known tech company boards. Mostly software roles. Tokens are checked on the first fetch; wrong ones just show an error here.</p>
-    <button>Add starter boards</button>
-  </form>
-</div>
+{% block title %}Job sources – jobhunt{% endblock %}
+{% macro rows_for(rows, board) -%}
 <table>
-<tr><th>On</th><th>Company</th><th>ATS</th><th>Token</th><th>Last fetch</th><th>Error</th><th></th></tr>
+<tr><th>On</th><th>{{ 'Board' if board else 'Company' }}</th><th>Last checked</th><th></th></tr>
 {% for c in rows %}
-<tr><td><form method="post" action="/companies/{{ c.id }}/toggle" class="inline"><button class="small">{{ '✓' if c.enabled else '–' }}</button></form></td>
-<td>{{ c.name }}{% if c.discovered %} <span class="pill">discovered</span>{% endif %}</td><td class="small">{{ c.ats }}</td><td class="small muted">{{ c.board_token }}</td>
-<td class="small muted">{{ c.last_fetch_at|rel }}</td><td class="small cross">{{ (c.last_error or '')[:80] }}</td>
-<td><form method="post" action="/companies/{{ c.id }}/delete" class="inline" data-confirm="Remove this company board and its jobs?"><button class="small danger">✕</button></form></td></tr>
-{% else %}<tr><td colspan="7" class="muted">No boards yet.</td></tr>{% endfor %}
+<tr><td><form method="post" action="/companies/{{ c.id }}/toggle" class="inline"><button class="small" aria-label="{{ 'Turn off' if c.enabled else 'Turn on' }} {{ c.name }}">{{ '✓' if c.enabled else '–' }}</button></form></td>
+<td>{{ c.name }}{% if c.discovered %} <span class="pill">found by jobhunt</span>{% endif %}{% if c.last_error %}<div class="small cross">Couldn't read it last time: {{ c.last_error[:80] }}</div>{% endif %}</td>
+<td class="small muted">{{ c.last_fetch_at|rel }}</td>
+<td><form method="post" action="/companies/{{ c.id }}/delete" class="inline" data-confirm="Remove {{ c.name }}?"><button class="small danger" aria-label="Remove {{ c.name }}">✕</button></form></td></tr>
+{% endfor %}
 </table>
+{%- endmacro %}
+{% block body %}
+{% set boards = rows|selectattr('ats', 'equalto', 'feed')|list %}
+{% set companies = rows|rejectattr('ats', 'equalto', 'feed')|list %}
+<div class="pagehead"><div><div class="eyebrow">Where jobhunt looks</div><h1>Job sources</h1></div></div>
+
+<div class="eyebrow section-label">Job boards you trust</div>
+<p class="small muted" style="margin:-4px 2px 10px">Sites that list jobs from many companies, like Work With Indies. jobhunt checks them on every search and trusts them more than the open web.</p>
+<form method="post" action="/boards/add" class="card">
+  <label>The board's web address</label>
+  <div class="row" style="gap:8px; flex-wrap:nowrap">
+    <input type="text" name="url" placeholder="workwithindies.com" required style="flex:1; min-width:0">
+    <button class="primary">Add board</button>
+  </div>
+  <div class="help">It needs a public job feed, and most smaller boards have one. Indeed and LinkedIn block outside tools.</div>
+</form>
+{% if boards %}{{ rows_for(boards, true) }}{% endif %}
+
+<div class="eyebrow section-label" style="margin-top:22px">Companies</div>
+<p class="small muted" style="margin:-4px 2px 10px">One company's own careers page, like Bungie's. These work best, because auto-apply can usually fill in their forms.</p>
+<form method="post" action="/companies/add" class="card">
+  <label>A job link from their careers site</label>
+  <div class="row" style="gap:8px; flex-wrap:nowrap">
+    <input type="text" name="url_or_token" placeholder="https://job-boards.greenhouse.io/bungie/jobs/123" required style="flex:1; min-width:0">
+    <button class="primary">Add company</button>
+  </div>
+  <div class="help">Works for careers sites on Greenhouse, Lever, Ashby or Workable. The link shows which one.</div>
+  <details style="margin-top:10px"><summary class="small">Add by board name instead</summary>
+    <label>Company name</label><input type="text" name="name">
+    <label>Careers site</label><select name="ats"><option value="auto">Detect from the link</option><option value="greenhouse">Greenhouse</option><option value="lever">Lever</option><option value="ashby">Ashby</option><option value="workable">Workable</option></select>
+  </details>
+</form>
+{% if companies %}{{ rows_for(companies, false) }}{% endif %}
+<form method="post" action="/companies/seed" style="margin-top:12px"><button class="small">Add about 25 well-known tech companies</button></form>
 {% endblock %}
