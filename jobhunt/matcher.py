@@ -10,7 +10,8 @@ SCORE_SYSTEM = """You are a careful, honest job-fit evaluator working for the ca
 Score how well a job posting fits the candidate's actual background: experience, projects, skills, degree, seniority.
 Be realistic: a posting that requires 8+ years for a recent graduate is a poor fit even if skills overlap.
 Do not inflate scores. 85+ means they should definitely apply; 65-84 worth applying; below 50 skip.
-Also note any red flags that suggest the posting is not a legitimate job (pay-to-apply, vague company, crypto/wire transfer, unrealistic pay).
+red_flags is only for signs the posting is a scam or not a real job: pay-to-apply, asking for money or ID up front, crypto or wire transfer, interviews only over chat apps, impossible pay.
+These are NOT red flags, so leave them out: no salary listed, contract or freelance work, a small, new or unnamed studio, NDAs or secret projects, broad scope, short timelines, location details, where the listing came from, or a weak fit with the candidate. Most postings have no red flags.
 Write 'summary' to the candidate in second person, plainly."""
 
 PROFILE_SYSTEM = """You help a job seeker decide what to search for. From the resume, produce job titles they are realistically qualified for right now
@@ -100,7 +101,7 @@ def score_pending(run_id: int, limit: int | None = None) -> dict:
             "fit_score": fit, "fit_summary": fs.summary, "fit_reasons": db.dumps(fs.matching_points),
             "fit_missing": db.dumps(fs.missing),
         }
-        if fs.red_flags:
+        if fs.red_flags and job.get("source") != "board":   # a board you trust isn't second-guessed; scam wording still counts in legit.score
             legit = max(0, (job.get("legit_score") or 50) - 15 * len(fs.red_flags))
             why = db.loads(job.get("legit_reasons"), []) + [f"-15 LLM flag: {f}" for f in fs.red_flags]
             fields.update({"legit_score": legit, "legit_reasons": db.dumps(why)})
