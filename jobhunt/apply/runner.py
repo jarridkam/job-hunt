@@ -14,7 +14,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .. import config, db, documents, llm, queue
+from .. import config, db, documents, llm, queue, work
 from ..models import FormAnswers
 from ..paths import BROWSER_PROFILE, SCREENSHOTS, UPLOADS
 from ..sources.base import detect_ats
@@ -25,7 +25,7 @@ SUCCESS = re.compile(
     r"we(?:'ve| have) received your application|your application (?:is|was) (?:complete|successful)|successfully (?:submitted|applied)|"
     r"application submitted|you(?:'ve| have) applied|thanks for applying", re.I)
 
-ANSWER_SYSTEM = """You fill in job application form questions on behalf of the candidate using ONLY the profile and resume provided.
+ANSWER_SYSTEM = """You fill in job application form questions on behalf of the candidate using ONLY the profile, resume and projects provided.
 For each question return the exact text to enter. If options are listed, return one option verbatim.
 Yes/no questions: answer from the profile.
 NEVER answer questions about work authorization, citizenship, visa or sponsorship, salary or compensation, age or date of birth,
@@ -33,7 +33,7 @@ gender, race, ethnicity, veteran or disability status, criminal history, securit
 those even if the profile seems to cover them; the candidate answers them personally.
 For "how did you hear about us" pick an option like "Job board", "Other", "LinkedIn", or "Company website" in that order of preference.
 For demographic / EEO questions (gender, race, veteran, disability) choose the option that declines to answer if one exists, otherwise UNKNOWN.
-For free-text questions (why this company, describe a project, etc.) write 2-5 sincere sentences in the candidate's first-person voice using facts from the resume only.
+For free-text questions (why this company, describe a project, etc.) write 2-5 sincere sentences in the candidate's first-person voice using facts from the resume and projects only.
 If the information truly is not available, return UNKNOWN. Never invent facts."""
 
 DECLINE = [re.compile(r"decline|prefer not|don't wish|do not wish|rather not|choose not|not to (?:say|answer|disclose)", re.I)]
@@ -308,7 +308,9 @@ def _answer_with_llm(fields: list[Field], job: dict, res: ApplyResult) -> dict[i
     for i, f in enumerate(fields, 1):
         opts = f" Options: {' / '.join(f.options[:40])}" if f.options else ""
         qs.append(f"{i}. {f.question or f.name} (type: {f.kind}{', required' if f.required else ''}){opts}")
+    projects = work.block(6000)
     user = (f"CANDIDATE PROFILE:\n{cand.as_prompt()}\n\nRESUME:\n{(r or {}).get('content','')[:9000]}\n\n"
+            + (f"{projects}\n\n" if projects else "") +
             f"JOB: {job.get('title')} at {job.get('company')}\n\nQUESTIONS (answer each, in order):\n" + "\n".join(qs))
     try:
         out = llm.extract(ANSWER_SYSTEM, user, FormAnswers, model=config.get("model_main"), effort="medium", purpose="form answers", max_tokens=6000)

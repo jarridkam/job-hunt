@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from .. import calendar_feed, capture, config, db, facts, health, mail, receipts, deadlines, documents, email_tracker, followup, llm, matcher, notify, pipeline, queue, tasks, writer
-from .. import messages, undo
+from .. import messages, undo, work
 from ..paths import SCREENSHOTS
 from . import auth, takeover
 
@@ -1681,9 +1681,75 @@ def undo_change(token: str, request: Request):
 
 # ---- documents ---------------------------------------------------------------
 
+def _rescore_count() -> int:
+    """Recent jobs whose score was made without your projects (new or weak fits; title-filtered ones excluded)."""
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    return (db.q1("SELECT COUNT(*) n FROM jobs WHERE status IN ('new','low_fit') AND COALESCE(fit_score,0) > 0 AND fetched_at >= ?",
+                  (since,)) or {}).get("n", 0)
+
+
 @app.get("/documents", response_class=HTMLResponse)
-def docs(request: Request):
-    return render(request, "documents.html", docs=documents.all_documents())
+def docs(request: Request, rescore: int = 0):
+    return render(request, "documents.html", docs=documents.all_documents(), work_drafts=work.drafts(), work_active=work.active(),
+                  reading=bool(tasks.is_running("work")), rescore_n=_rescore_count() if rescore else 0,
+                  last_fail=db.q1("SELECT summary FROM runs WHERE kind='work' AND finished_at >= ? ORDER BY id DESC LIMIT 1",
+                                  ((datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),)),
+                  skip_dirs=sorted(work.SKIP_DIRS), describe_re=work.DESCRIBE.pattern, never_re=work.NEVER.pattern)
+
+
+# ---- your work: projects that count as proof ---------------------------------------------------------------
+
+@app.post("/work/github")
+def work_github(url: str = Form(...)):
+    url = url.strip()
+    if not work.GH.search(url):
+        return back("/documents#work", "That doesn't look like a GitHub link. Use github.com/you/project or github.com/you.")
+    rid = tasks.start("work", lambda run_id: f"read {len(work.add_github(url, log=lambda m: db.run_log(run_id, m)))} project(s)")
+    return back("/documents#work", "Reading it now. Your facts appear here in a minute." if rid else "Already reading a project. Try again in a minute.")
+
+
+@app.post("/work/folder")
+async def work_folder(request: Request):
+    form = await request.form(max_files=40, max_fields=10)
+    name = str(form.get("name") or "Project")[:80]
+    tree = [p for p in str(form.get("tree") or "").splitlines() if p.strip()][:3000]
+    files: dict[str, str] = {}
+    for f in form.getlist("files"):
+        if not hasattr(f, "read"):
+            continue
+        path = (getattr(f, "filename", "") or "").replace("\\", "/")
+        data = await f.read(300_000)
+        if work.wanted(path):
+            files[path] = data.decode("utf-8", errors="replace")
+    if not files and not tree:
+        return back("/documents#work", "Nothing readable in that folder. Pick the project's main folder, the one with its README.")
+    rid = tasks.start("work", lambda run_id: f"read folder {name}: draft {work.add_folder(name, files, tree)}")
+    return back("/documents#work", "Reading it now. Your facts appear here in a minute." if rid else "Already reading a project. Try again in a minute.")
+
+
+@app.post("/work/{doc_id}/save")
+def work_save(doc_id: int, title: str = Form(...), content: str = Form(...)):
+    d = db.q1("SELECT kind, status FROM documents WHERE id=?", (doc_id,))
+    if not d or d["kind"] != "work":
+        return back("/documents#work", "not found")
+    db.update("documents", doc_id, {"title": title.strip()[:80] or "Project", "content": content.strip(), "status": "active",
+                                    "updated_at": db.now_iso()})
+    return back("/documents?rescore=1#work", "Saved. jobhunt now counts these as true.")
+
+
+@app.post("/work/{doc_id}/delete")
+def work_delete(doc_id: int):
+    db.execute("DELETE FROM documents WHERE id=? AND kind='work'", (doc_id,))
+    return back("/documents#work", "Removed")
+
+
+@app.post("/work/rescore")
+def work_rescore():
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    db.execute("UPDATE jobs SET fit_score=NULL, status='new' WHERE status IN ('new','low_fit') AND COALESCE(fit_score,0) > 0 AND fetched_at >= ?",
+               (since,))
+    tasks.start("score", tasks.score_task)
+    return back("/documents#work", "Re-checking your matches with your projects in mind.")
 
 
 @app.post("/documents/upload")

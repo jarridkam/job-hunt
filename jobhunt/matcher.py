@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from . import config, db, documents, llm
+from . import config, db, documents, llm, work
 from .models import FitScore, SearchProfile
 
 SCORE_SYSTEM = """You are a careful, honest job-fit evaluator working for the candidate.
@@ -23,7 +23,8 @@ def resume_block() -> str:
         raise llm.LLMError("No active resume. Add one under Documents.")
     cand = config.candidate()
     extra = f"\n\nAdditional profile facts:\n{cand.as_prompt()}" if cand.full_name else ""
-    return f"CANDIDATE RESUME:\n{r['content']}{extra}"
+    projects = work.block()
+    return f"CANDIDATE RESUME:\n{r['content']}{extra}" + (f"\n\n{projects}" if projects else "")
 
 
 def suggest_search_profile() -> SearchProfile:

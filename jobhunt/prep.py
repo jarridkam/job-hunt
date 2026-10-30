@@ -2,7 +2,7 @@
 you sent, the fit gaps) into a page you can read in five minutes before the call."""
 from __future__ import annotations
 
-from . import config, db, documents, llm
+from . import config, db, documents, llm, work
 from .models import PrepCard
 
 SYSTEM = """You are an interview coach preparing a candidate for one specific interview. Be concrete and brief;
@@ -34,6 +34,9 @@ def build(iid: int) -> PrepCard:
         parts.append(f"NOTES: {app['notes'][:800]}")
     if resume.get("content"):
         parts.append(f"RESUME:\n{resume['content'][:5000]}")
+    projects = work.block(4000)
+    if projects:
+        parts.append(projects)
     if config.get("cand_salary"):
         parts.append(f"SALARY EXPECTATION: {config.get('cand_salary')}")
     card = llm.extract(SYSTEM, "\n\n".join(parts), PrepCard, model=config.get("model_main"), effort="medium",

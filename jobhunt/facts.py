@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import config, db, documents, llm
+from . import config, db, documents, llm, work
 
 
 class Claim(BaseModel):
@@ -27,7 +27,7 @@ SYSTEM = """You audit text written on behalf of a job candidate. List every fact
 (years of experience, skills, tools, projects, employers, degrees, certifications, numbers, availability, location,
 work authorization). Opinions, intentions and statements about the company are not claims. For each claim decide,
 using ONLY the fact base, whether it is supported, unsupported, or contradicted. Be strict on numbers and named
-technologies; a skill is supported if the resume shows it used, not merely a related one. Quote the text exactly."""
+technologies; a skill is supported if the resume or the checked projects show it used, not merely a related one. Quote the text exactly."""
 
 
 def fact_base() -> str:
@@ -36,6 +36,9 @@ def fact_base() -> str:
     parts = [f"PROFILE:\n{cand.as_prompt()}"]
     if r:
         parts.append(f"RESUME:\n{r['content'][:12000]}")
+    projects = work.block()
+    if projects:
+        parts.append(projects)
     return "\n\n".join(parts)
 
 

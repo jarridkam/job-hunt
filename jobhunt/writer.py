@@ -1,7 +1,7 @@
 """Cover letter drafting that learns the candidate's voice from approved letters."""
 from __future__ import annotations
 
-from . import config, db, documents, llm
+from . import config, db, documents, llm, work
 
 SYSTEM = """You write cover letters in the candidate's own voice, in first person, for the candidate to send.
 Rules:
@@ -32,6 +32,9 @@ def draft(job: dict, instruction: str = "", previous: str = "") -> str:
     fit_points = db.loads(job.get("fit_reasons"), [])
     missing = db.loads(job.get("fit_missing"), [])
     user = [f"CANDIDATE PROFILE:\n{cand.as_prompt()}", f"RESUME:\n{r['content']}"]
+    projects = work.block()
+    if projects:
+        user.append(projects)
     if cand.voice_notes.strip():
         user.append(f"HOW THE CANDIDATE WANTS TO SOUND:\n{cand.voice_notes.strip()}")
     voice = _voice_block()

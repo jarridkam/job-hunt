@@ -461,3 +461,9 @@ table tr > td:last-child { border-radius: 0 12px 12px 0; }
 .already { text-align: center; margin-top: 14px; }
 .already button { font-size: 15px; color: var(--muted); }
 .already button:hover { color: var(--fg); }
+
+/* your work: checked project facts */
+.work-card .work-title { font-family: var(--display); font-size: 20px; font-weight: 700; margin-top: 6px; }
+.work-card textarea.work-facts { min-height: 220px; font-size: 15px; line-height: 1.5; }
+.work-card .work-text { white-space: pre-wrap; font-size: 15px; line-height: 1.5; margin: 10px 0 6px; }
+.flash.bad { background: var(--bad-soft); color: var(--bad); }

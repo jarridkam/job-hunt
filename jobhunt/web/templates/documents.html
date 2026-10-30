@@ -1,39 +1,177 @@
 {% extends "base.html" %}
+{% block title %}Resumes &amp; documents – jobhunt{% endblock %}
 {% block body %}
-<h1>Documents</h1>
-<p class="small muted">One <b>active resume</b> is used for matching, drafting, and uploads. <b>Cover letters</b> (active or archived) are voice samples: the drafter imitates how they sound. Letters you approve are saved here automatically.</p>
-
-<div class="grid">
-  <form method="post" action="/documents/upload" enctype="multipart/form-data" class="card">
-    <h2>Upload (PDF / DOCX / TXT)</h2>
-    <label>Kind</label><select name="kind"><option value="resume">Resume</option><option value="cover_letter">Cover letter</option></select>
-    <label>Title</label><input type="text" name="title" placeholder="optional">
-    <label>File</label><input type="file" name="file" required>
-    <label>Notes</label><input type="text" name="notes">
-    <button class="primary" style="margin-top:10px">Upload</button>
-  </form>
-  <form method="post" action="/documents/paste" class="card">
-    <h2>Paste text</h2>
-    <label>Kind</label><select name="kind"><option value="resume">Resume</option><option value="cover_letter">Cover letter</option></select>
-    <label>Title</label><input type="text" name="title" placeholder="optional">
-    <label>Content</label><textarea name="content" required style="min-height:140px"></textarea>
-    <button class="primary" style="margin-top:10px">Save</button>
-  </form>
+{% set resumes = docs|selectattr('kind', 'equalto', 'resume')|list %}
+{% set active_resume = resumes|selectattr('status', 'equalto', 'active')|first %}
+{% set letters = docs|selectattr('kind', 'equalto', 'cover_letter')|list %}
+<div class="pagehead">
+  <div><div class="eyebrow">What jobhunt knows about you</div><h1>Resumes &amp; documents</h1></div>
 </div>
 
-<h2>Resumes</h2>
-<table><tr><th>Status</th><th>Title</th><th>Updated</th><th>Chars</th><th></th></tr>
-{% for d in docs if d.kind=='resume' %}
-<tr><td><span class="pill {{ 'ok' if d.status=='active' }}">{{ d.status }}</span></td><td><a href="/documents/{{ d.id }}">{{ d.title }}</a>{% if d.file_path %} <span class="small muted">file</span>{% endif %}</td><td class="small muted">{{ d.updated_at|dt }}</td><td class="small muted">{{ d.content|length }}</td>
-<td class="row">{% if d.status!='active' %}<form method="post" action="/documents/{{ d.id }}/status" class="inline"><input type="hidden" name="status" value="active"><button class="small">Make active</button></form>{% else %}<form method="post" action="/documents/{{ d.id }}/status" class="inline"><input type="hidden" name="status" value="archived"><button class="small">Archive</button></form>{% endif %}
-<form method="post" action="/documents/{{ d.id }}/delete" class="inline" data-confirm="Delete this document?"><button class="small danger">✕</button></form></td></tr>
-{% else %}<tr><td colspan="5" class="muted">No resume yet.</td></tr>{% endfor %}</table>
+{# ---- resume ---- #}
+<div class="eyebrow section-label">Your resume</div>
+<div class="card">
+  {% if active_resume %}
+  <div class="row" style="justify-content:space-between; align-items:flex-start">
+    <div><b><a href="/documents/{{ active_resume.id }}">{{ active_resume.title }}</a></b>
+      <div class="small muted">In use for matching, letters and uploads · updated {{ active_resume.updated_at|rel }}</div></div>
+    <span class="pill ok">In use</span>
+  </div>
+  {% else %}
+  <b>No resume yet.</b>
+  <div class="small muted">jobhunt needs one to score jobs and write letters.</div>
+  {% endif %}
+  <details style="margin-top:12px"><summary class="small">{{ 'Use a new version' if active_resume else 'Add your resume' }}</summary>
+    <form method="post" action="/documents/upload" enctype="multipart/form-data" style="margin-top:10px">
+      <input type="hidden" name="kind" value="resume">
+      <label>PDF, Word or text file</label><input type="file" name="file" required accept=".pdf,.docx,.txt,.md">
+      <label>Name it <span class="small muted">(optional)</span></label><input type="text" name="title" placeholder="e.g. Resume, support roles">
+      <button class="primary" style="margin-top:10px">Upload and use it</button>
+    </form>
+  </details>
+  {% if resumes|length > 1 %}
+  <details style="margin-top:6px"><summary class="small">{{ resumes|length - 1 }} older version{{ 's' if resumes|length > 2 }}</summary>
+    <div class="rows" style="margin-top:8px">
+    {% for d in resumes if d.status != 'active' %}
+      <div class="row" style="justify-content:space-between; padding:6px 0"><a href="/documents/{{ d.id }}">{{ d.title }}</a>
+        <span class="row"><form method="post" action="/documents/{{ d.id }}/status" class="inline"><input type="hidden" name="status" value="active"><button class="small">Use this one</button></form>
+        <form method="post" action="/documents/{{ d.id }}/delete" class="inline" data-confirm="Delete this resume?"><button class="small danger">Delete</button></form></span></div>
+    {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</div>
 
-<h2>Cover letters (voice samples)</h2>
-<table><tr><th>Status</th><th>Title</th><th>Source</th><th>Updated</th><th></th></tr>
-{% for d in docs if d.kind=='cover_letter' %}
-<tr><td><span class="pill {{ 'ok' if d.status=='active' }}">{{ d.status }}</span></td><td><a href="/documents/{{ d.id }}">{{ d.title }}</a></td><td class="small muted">{{ d.source }}</td><td class="small muted">{{ d.updated_at|dt }}</td>
-<td class="row"><form method="post" action="/documents/{{ d.id }}/status" class="inline"><input type="hidden" name="status" value="{{ 'archived' if d.status=='active' else 'active' }}"><button class="small">{{ 'Archive' if d.status=='active' else 'Activate' }}</button></form>
-<form method="post" action="/documents/{{ d.id }}/delete" class="inline" data-confirm="Delete this document?"><button class="small danger">✕</button></form></td></tr>
-{% else %}<tr><td colspan="5" class="muted">None yet. Paste a letter you wrote and liked, if you have one.</td></tr>{% endfor %}</table>
+{# ---- your work ---- #}
+<div class="eyebrow section-label" id="work">Your work</div>
+<p class="small muted" style="margin:-4px 2px 10px">Projects that show what you can do, beyond what fits on a resume. Once you've checked the facts,
+  jobhunt counts them as true everywhere: matching, letters, form answers and interview prep.</p>
+
+{% if reading %}
+<div class="flash"><span class="spin"></span> Reading your project. This page updates by itself.</div>
+{% elif last_fail and (last_fail.summary or '').startswith('failed') %}
+<div class="flash bad">Couldn't read the last one: {{ last_fail.summary[8:200] }}</div>
+{% endif %}
+
+{% if rescore_n %}
+<div class="card ask" style="margin-bottom:10px">
+  <b>Re-check your matches?</b>
+  <div class="small muted" style="margin:4px 0 10px">{{ rescore_n }} recent job{{ 's were' if rescore_n != 1 else ' was' }} scored before jobhunt knew this. Some may turn out to be better fits.</div>
+  <form method="post" action="/work/rescore"><button class="primary">Re-check {{ rescore_n }} job{{ 's' if rescore_n != 1 }}</button></form>
+</div>
+{% endif %}
+
+{% for d in work_drafts %}
+<form method="post" action="/work/{{ d.id }}/save" class="card ask work-card" style="margin-bottom:10px">
+  <div class="eyebrow">Check these facts · from {{ (d.notes or '').splitlines()[0] }}</div>
+  <input type="text" name="title" value="{{ d.title }}" aria-label="Project name" class="work-title">
+  {% set check = (d.notes or '').splitlines()[1:]|join(' ') %}
+  {% if check %}<div class="small warn-text" style="margin:6px 0">{{ check }}</div>{% endif %}
+  <textarea name="content" class="work-facts" aria-label="Facts">{{ d.content }}</textarea>
+  <div class="help">Change anything that's wrong or delete lines. Only what's here gets used.</div>
+  <div class="row" style="margin-top:10px">
+    <button class="primary">Looks right, use it</button>
+    <span class="spacer"></span>
+    <button formaction="/work/{{ d.id }}/delete" class="link" style="color:var(--bad)">Delete</button>
+  </div>
+</form>
+{% endfor %}
+
+{% for d in work_active %}
+<div class="card work-card" style="margin-bottom:10px">
+  <div class="row" style="justify-content:space-between; align-items:flex-start">
+    <div><b>{{ d.title }}</b><div class="small muted">{{ (d.notes or '').splitlines()[0] }}</div></div>
+    <span class="pill ok">In use</span>
+  </div>
+  <div class="work-text">{{ d.content }}</div>
+  <details><summary class="small">Edit</summary>
+    <form method="post" action="/work/{{ d.id }}/save" style="margin-top:8px">
+      <input type="text" name="title" value="{{ d.title }}" aria-label="Project name">
+      <textarea name="content" class="work-facts" aria-label="Facts">{{ d.content }}</textarea>
+      <div class="row" style="margin-top:8px"><button class="primary small">Save</button><span class="spacer"></span>
+        <button formaction="/work/{{ d.id }}/delete" class="link" style="color:var(--bad)" data-confirm="Remove {{ d.title }}? jobhunt stops using these facts.">Remove</button></div>
+    </form>
+  </details>
+</div>
+{% endfor %}
+
+<div class="card">
+  <b>Add a project</b>
+  <form method="post" action="/work/github" style="margin-top:10px">
+    <label>From GitHub</label>
+    <div class="row" style="gap:8px; flex-wrap:nowrap">
+      <input type="url" name="url" placeholder="github.com/you/project, or github.com/you" required style="flex:1; min-width:0">
+      <button>Read it</button>
+    </div>
+    <div class="help">A profile link adds your {{ 8 }} most recently updated public projects, each one to check.</div>
+  </form>
+  <div style="margin-top:14px">
+    <label>From a folder on this device</label>
+    <div class="row" style="gap:8px; flex-wrap:nowrap">
+      <input type="file" id="work-folder" webkitdirectory directory multiple style="flex:1; min-width:0">
+      <button type="button" id="work-folder-go" disabled>Read it</button>
+    </div>
+    <div class="help" id="work-folder-help">Pick the project's main folder. Only its README, build files and file names are read; code, data, keys and <code>.env</code> files are left alone.</div>
+  </div>
+</div>
+
+{# ---- voice samples ---- #}
+<div class="eyebrow section-label">How you sound</div>
+<p class="small muted" style="margin:-4px 2px 10px">Letters you wrote or approved. New letters copy how these sound. Letters you approve are added here by themselves.</p>
+<div class="card">
+  {% for d in letters %}
+  <div class="row" style="justify-content:space-between; padding:6px 0">
+    <span><a href="/documents/{{ d.id }}">{{ d.title }}</a>{% if d.status != 'active' %} <span class="small muted">· not used</span>{% endif %}</span>
+    <span class="row"><form method="post" action="/documents/{{ d.id }}/status" class="inline"><input type="hidden" name="status" value="{{ 'archived' if d.status == 'active' else 'active' }}"><button class="small">{{ "Don't use" if d.status == 'active' else 'Use' }}</button></form>
+      <form method="post" action="/documents/{{ d.id }}/delete" class="inline" data-confirm="Delete this letter?"><button class="small danger">Delete</button></form></span>
+  </div>
+  {% else %}<div class="muted small">None yet. Paste a letter you wrote and liked, if you have one.</div>{% endfor %}
+  <details style="margin-top:10px"><summary class="small">Paste a letter</summary>
+    <form method="post" action="/documents/paste" style="margin-top:8px">
+      <input type="hidden" name="kind" value="cover_letter">
+      <label>Name it <span class="small muted">(optional)</span></label><input type="text" name="title">
+      <label>The letter</label><textarea name="content" required style="min-height:140px"></textarea>
+      <button class="primary" style="margin-top:10px">Save</button>
+    </form>
+  </details>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  {% if reading %}setTimeout(function () { if (!window.jobhuntBusy || !window.jobhuntBusy()) location.reload(); }, 5000);{% endif %}
+  // Folder picker: send only the files that describe the project, plus the list of file names. Mirrors jobhunt/work.py.
+  var input = document.getElementById('work-folder'), go = document.getElementById('work-folder-go'), help = document.getElementById('work-folder-help');
+  if (!input) return;
+  var SKIP = {{ skip_dirs|tojson }}, DESCRIBE = new RegExp({{ describe_re|tojson }}), NEVER = new RegExp({{ never_re|tojson }}, 'i');
+  var picked = null;
+  function parts(f) { return (f.webkitRelativePath || f.name).split('/'); }
+  input.addEventListener('change', function () {
+    var all = Array.prototype.slice.call(input.files || []);
+    if (!all.length) { go.disabled = true; return; }
+    var name = parts(all[0])[0], tree = [], files = [];
+    all.forEach(function (f) {
+      var p = parts(f).slice(1), dirs = p.slice(0, -1).map(function (d) { return d.toLowerCase(); });
+      if (!p.length || dirs.some(function (d) { return SKIP.indexOf(d) >= 0; })) return;
+      var rel = p.join('/'), file = p[p.length - 1].toLowerCase();
+      if (tree.length < 3000 && !NEVER.test(file)) tree.push(rel);
+      var docs = p.length <= 3 && dirs[dirs.length - 1] === 'docs' && /\.md$/.test(file);
+      if (p.length <= 4 && !NEVER.test(file) && (DESCRIBE.test(file) || docs) && f.size < 300000 && files.length < 25) files.push([rel, f]);
+    });
+    picked = { name: name, tree: tree, files: files };
+    help.textContent = name + ': ' + files.length + ' describing file' + (files.length === 1 ? '' : 's') + ' and ' + tree.length + ' file names will be read.';
+    go.disabled = !(files.length || tree.length);
+  });
+  go.addEventListener('click', function () {
+    if (!picked) return;
+    var fd = new FormData();
+    fd.append('name', picked.name); fd.append('tree', picked.tree.join('\n'));
+    picked.files.forEach(function (x) { fd.append('files', x[1], x[0]); });
+    go.disabled = true; go.textContent = 'Sending…';
+    fetch('/work/folder', { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(function (r) { location.href = r.url || '/documents#work'; })
+      .catch(function () { go.disabled = false; go.textContent = 'Read it'; help.textContent = "Couldn't send it. Check your connection and try again."; });
+  });
+})();
+</script>
 {% endblock %}
