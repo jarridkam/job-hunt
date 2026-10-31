@@ -1087,7 +1087,7 @@ def application_new(company: str = Form(...), title: str = Form(""), status: str
 def application_detail(request: Request, app_id: int):
     a = queue.with_job(app_id)
     if not a:
-        return back("/queue", "not found")
+        return back("/queue", "That application is gone. If the job closed, it was removed automatically.")
     drafting = tasks.is_running(f"draft-{app_id}")
     applying = tasks.is_running(f"apply-{app_id}")
     nxt = db.q1("SELECT id FROM applications WHERE status IN ('queued','ready','needs_attention') AND id != ? "

@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import config, db, documents, llm, queue, work
+from ..pipeline import CLOSED_PAGE
 from ..models import FormAnswers
 from ..paths import BROWSER_PROFILE, SCREENSHOTS, UPLOADS
 from ..sources.base import detect_ats
@@ -46,11 +47,33 @@ COMPLIANCE_KEYS = ("work_auth", "sponsorship", "salary", "eeo")
 NO = [re.compile(r"^no\b", re.I)]
 
 
+class _JobClosed(Exception):
+    pass
+
+
+def _closed_reason(page, status: int | None) -> str:
+    """Why the page in front of us says the job is gone, or "". Wording only counts with no real form on screen,
+    so a live application that mentions closed roles isn't thrown away."""
+    if status in (404, 410):
+        return f"page gone ({status})"
+    for frame in page.frames:
+        try:
+            if frame.locator('textarea, input[type="file"]').first.count():
+                return ""
+            hit = CLOSED_PAGE.search(frame.locator("body").inner_text(timeout=3000))
+        except Exception:  # noqa: BLE001
+            continue
+        if hit:
+            return f'page says "{hit.group(0)}"'
+    return ""
+
+
 class ApplyResult:
     def __init__(self):
         self.log: list[str] = []
         self.unresolved: list[str] = []
         self.no_form = False
+        self.closed = ""                      # why the job turned out to be gone, if it did
         self.submitted = False
         self.cancelled = False
         self.screenshot: str | None = None
@@ -604,12 +627,15 @@ def apply_to(app_id: int, run_id: int | None = None, handoff_minutes: int = 20) 
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            opened = page.goto(url, wait_until="domcontentloaded", timeout=60000)
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:  # noqa: BLE001
                 pass
             res.add(f"opened {url}")
+            res.closed = _closed_reason(page, opened.status if opened else None)
+            if res.closed:
+                raise _JobClosed
             frame = _best_frame(page)
             if not frame.locator('input[type="file"], textarea, input[type="email"]').first.count():
                 for getter in (page.get_by_role("button", name=re.compile(r"^apply|apply (now|for this)", re.I)),
@@ -624,6 +650,9 @@ def apply_to(app_id: int, run_id: int | None = None, handoff_minutes: int = 20) 
                             pass
                         break
                 frame = _best_frame(page)
+            res.closed = _closed_reason(page, None)    # the Apply button can lead to the closed notice
+            if res.closed:
+                raise _JobClosed
             if not frame.locator("input, textarea, select").first.count():
                 res.add("no form found on this page")
                 res.unresolved.append("jobhunt couldn't find the application form on that page. Open the posting and apply there")
@@ -666,6 +695,8 @@ def apply_to(app_id: int, run_id: int | None = None, handoff_minutes: int = 20) 
                 res.add("auto_submit off and headless on: filled only")
             if res.submitted:
                 res.screenshot = _shot(page, app_id, "submitted") or res.screenshot
+        except _JobClosed:
+            res.add(f"job closed: {res.closed}")
         except Exception as e:  # noqa: BLE001
             res.add(f"ERROR: {e}")
             res.screenshot = _shot(page, app_id, "error") or res.screenshot
@@ -675,6 +706,12 @@ def apply_to(app_id: int, run_id: int | None = None, handoff_minutes: int = 20) 
             except Exception:  # noqa: BLE001
                 pass
 
+    if res.closed:
+        # Nothing was sent, so there's nothing to keep track of. The job stays hidden so searches don't bring it back.
+        queue.remove(app_id, job_status="closed")
+        if run_id:
+            db.run_log(run_id, f"removed {app['company']} {app['title']}: job closed, {res.closed}")
+        return res
     log = "\n".join(res.log)
     final = sorted(res.review.values(), key=lambda r: r["idx"])   # includes your review-screen edits (source "you")
     db.update("applications", app_id, {"submit_log": log, "screenshot_path": res.screenshot,

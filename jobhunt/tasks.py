@@ -152,5 +152,7 @@ def apply_task(app_id: int):
             # Before or during the browser: say so on the application instead of leaving it "applying".
             queue.set_status(app_id, "needs_attention", "Auto-apply couldn't start: " + friendly_error(e), source="system")
             raise
+        if res.closed:
+            return "job closed, removed it"
         return "submitted" if res.submitted else "needs attention"
     return _run
